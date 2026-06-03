@@ -66,33 +66,38 @@ export default function MealsPage() {
               </div>
               <div className="space-y-2">
                 <Label>Foods (coef 0-1+)</Label>
-                {items.map((it, i) => (
-                  <div key={i} className="flex gap-2 items-center">
-                    <select
-                      className="flex-1 rounded-md border bg-background px-2 py-1.5 text-sm"
-                      value={it.food_id}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setItems((prev) => prev.map((p, j) => j === i ? { ...p, food_id: v } : p));
-                      }}
-                    >
-                      {foods.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-                    </select>
-                    <Input
-                      type="number" step="0.01" className="w-20"
-                      value={it.coef}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setItems((prev) => prev.map((p, j) => j === i ? { ...p, coef: v } : p));
-                      }}
-                    />
-                    <button type="button"
-                      onClick={() => setItems((prev) => prev.filter((_, j) => j !== i))}
-                      className="text-muted-foreground hover:text-destructive">
-                      <Trash2 className="size-4" />
-                    </button>
-                  </div>
-                ))}
+                {items.map((it, i) => {
+                  const f = foods.find((x) => x.id === it.food_id);
+                  const unit = f ? `${f.labelBasisAmount ?? "100"}${f.servingBasis ?? "g"}` : "";
+                  return (
+                    <div key={i} className="flex gap-2 items-center">
+                      <select
+                        className="flex-1 rounded-md border bg-background px-2 py-1.5 text-sm"
+                        value={it.food_id}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setItems((prev) => prev.map((p, j) => j === i ? { ...p, food_id: v } : p));
+                        }}
+                      >
+                        {foods.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                      </select>
+                      <Input
+                        type="number" step="0.01" className="w-20"
+                        value={it.coef}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setItems((prev) => prev.map((p, j) => j === i ? { ...p, coef: v } : p));
+                        }}
+                      />
+                      <span className="text-xs text-muted-foreground w-16 shrink-0">× {unit}</span>
+                      <button type="button"
+                        onClick={() => setItems((prev) => prev.filter((_, j) => j !== i))}
+                        className="text-muted-foreground hover:text-destructive">
+                        <Trash2 className="size-4" />
+                      </button>
+                    </div>
+                  );
+                })}
                 <Button type="button" variant="outline" size="sm" onClick={addItem}>
                   <Plus className="size-3" /> Add food
                 </Button>
