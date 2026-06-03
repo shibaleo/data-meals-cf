@@ -118,6 +118,9 @@ function FoodDialog({
   const [vitamins, setVitamins] = useState<MicroRow[]>([]);
   const [minerals, setMinerals] = useState<MicroRow[]>([]);
   const [basis, setBasis] = useState<ServingBasis>("g");
+  // Snapshot of the non-RHF fields at dialog-open time, so we can compute dirty.
+  const [initialBasis, setInitialBasis] = useState<ServingBasis>("g");
+  const [initialMicros, setInitialMicros] = useState<{ v: string; m: string }>({ v: "{}", m: "{}" });
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -137,16 +140,33 @@ function FoodDialog({
         fat_g_per_100g: food.fatGPer100g ?? "",
         carb_g_per_100g: food.carbGPer100g ?? "",
       });
-      setBasis((food.servingBasis as ServingBasis) ?? "g");
-      setVitamins(jsonToRows(food.vitaminJson));
-      setMinerals(jsonToRows(food.mineralJson));
+      const b = (food.servingBasis as ServingBasis) ?? "g";
+      const v = jsonToRows(food.vitaminJson);
+      const m = jsonToRows(food.mineralJson);
+      setBasis(b);
+      setVitamins(v);
+      setMinerals(m);
+      setInitialBasis(b);
+      setInitialMicros({
+        v: JSON.stringify(rowsToJson(v) ?? {}),
+        m: JSON.stringify(rowsToJson(m) ?? {}),
+      });
     } else {
       form.reset({ name: "" });
       setBasis("g");
       setVitamins([]);
       setMinerals([]);
+      setInitialBasis("g");
+      setInitialMicros({ v: "{}", m: "{}" });
     }
   }, [open, food, form]);
+
+  const microsDirty =
+    JSON.stringify(rowsToJson(vitamins) ?? {}) !== initialMicros.v ||
+    JSON.stringify(rowsToJson(minerals) ?? {}) !== initialMicros.m;
+  const basisDirty = basis !== initialBasis;
+  // form.formState.isDirty reflects PFC + name/brand/serving fields.
+  const dirty = form.formState.isDirty || microsDirty || basisDirty;
 
   async function onSubmit(values: FormValues) {
     const payload = {
@@ -237,7 +257,7 @@ function FoodDialog({
             placeholder="e.g. vitamin_c_mg" />
           <MicroEditor label="Minerals" rows={minerals} setRows={setMinerals}
             placeholder="e.g. iron_mg" />
-          <Button type="submit" disabled={pending}>
+          <Button type="submit" disabled={pending || (isEdit && !dirty)}>
             {isEdit ? "Update" : "Save"}
           </Button>
         </form>
