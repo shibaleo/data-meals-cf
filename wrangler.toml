@@ -1,0 +1,19 @@
+name = "data-meals-cf"
+main = "dist/_worker.js"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat_v2"]
+
+[vars]
+VITE_BASE_URL = "https://data-meals-cf.shibaleo.workers.dev"
+
+# Shared Hyperdrive with data-drills-cf — both point at the same Neon instance.
+# data_meals vs data_drills は postgres-js client の search_path で分離している
+# (src/lib/db/index.ts)。Hyperdrive 自体は DB 単位で良いので id 流用で OK。
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "10aa89de790d4ad8b16c0d24b023c365"
+
+[assets]
+directory = "dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
