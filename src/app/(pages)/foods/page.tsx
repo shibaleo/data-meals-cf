@@ -1,18 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { usePageTitle } from "@/lib/page-context";
-import { useFoods, useCreateFood, useDeleteFood } from "@/hooks/queries/use-foods";
+import {
+  useFoods, useCreateFood, useUpdateFood, useDeleteFood, type FoodRow,
+} from "@/hooks/queries/use-foods";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 
 const formSchema = z.object({
@@ -27,6 +29,23 @@ const formSchema = z.object({
 type FormValues = z.infer<typeof formSchema>;
 
 interface MicroRow { key: string; value: string }
+
+function jsonToRows(j: unknown): MicroRow[] {
+  if (!j || typeof j !== "object") return [];
+  return Object.entries(j as Record<string, number>)
+    .map(([key, value]) => ({ key, value: String(value) }));
+}
+
+function rowsToJson(rows: MicroRow[]): Record<string, number> | undefined {
+  const out: Record<string, number> = {};
+  for (const r of rows) {
+    const k = r.key.trim();
+    if (!k) continue;
+    const n = Number(r.value);
+    if (Number.isFinite(n)) out[k] = n;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
 
 function MicroEditor({
   label,
@@ -82,23 +101,18 @@ function MicroEditor({
   );
 }
 
-function rowsToJson(rows: MicroRow[]): Record<string, number> | undefined {
-  const out: Record<string, number> = {};
-  for (const r of rows) {
-    const k = r.key.trim();
-    if (!k) continue;
-    const n = Number(r.value);
-    if (Number.isFinite(n)) out[k] = n;
-  }
-  return Object.keys(out).length > 0 ? out : undefined;
-}
-
-export default function FoodsPage() {
-  usePageTitle("Foods");
-  const { data: foods = [], isLoading } = useFoods();
+function FoodDialog({
+  food,
+  open,
+  onOpenChange,
+}: {
+  food: FoodRow | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const isEdit = food !== null;
   const createFood = useCreateFood();
-  const deleteFood = useDeleteFood();
-  const [open, setOpen] = useState(false);
+  const updateFood = useUpdateFood();
   const [vitamins, setVitamins] = useState<MicroRow[]>([]);
   const [minerals, setMinerals] = useState<MicroRow[]>([]);
 
@@ -107,78 +121,132 @@ export default function FoodsPage() {
     defaultValues: { name: "" },
   });
 
-  async function onSubmit(values: FormValues) {
-    try {
-      await createFood.mutateAsync({
-        name: values.name,
-        brand: values.brand || null,
-        default_serving_g: values.default_serving_g || null,
-        kcal_per_100g: values.kcal_per_100g || "0",
-        protein_g_per_100g: values.protein_g_per_100g || "0",
-        fat_g_per_100g: values.fat_g_per_100g || "0",
-        carb_g_per_100g: values.carb_g_per_100g || "0",
-        vitamin_json: rowsToJson(vitamins),
-        mineral_json: rowsToJson(minerals),
+  // Sync form + micros each time dialog opens with a different target
+  useEffect(() => {
+    if (!open) return;
+    if (food) {
+      form.reset({
+        name: food.name,
+        brand: food.brand ?? "",
+        default_serving_g: food.defaultServingG ?? "",
+        kcal_per_100g: food.kcalPer100g ?? "",
+        protein_g_per_100g: food.proteinGPer100g ?? "",
+        fat_g_per_100g: food.fatGPer100g ?? "",
+        carb_g_per_100g: food.carbGPer100g ?? "",
       });
-      toast.success("Food added");
-      form.reset();
-      setVitamins([]); setMinerals([]);
-      setOpen(false);
+      setVitamins(jsonToRows(food.vitaminJson));
+      setMinerals(jsonToRows(food.mineralJson));
+    } else {
+      form.reset({ name: "" });
+      setVitamins([]);
+      setMinerals([]);
+    }
+  }, [open, food, form]);
+
+  async function onSubmit(values: FormValues) {
+    const payload = {
+      name: values.name,
+      brand: values.brand || null,
+      default_serving_g: values.default_serving_g || null,
+      kcal_per_100g: values.kcal_per_100g || "0",
+      protein_g_per_100g: values.protein_g_per_100g || "0",
+      fat_g_per_100g: values.fat_g_per_100g || "0",
+      carb_g_per_100g: values.carb_g_per_100g || "0",
+      vitamin_json: rowsToJson(vitamins),
+      mineral_json: rowsToJson(minerals),
+    };
+    try {
+      if (isEdit && food) {
+        await updateFood.mutateAsync({ id: food.id, body: payload });
+        toast.success("Food updated");
+      } else {
+        await createFood.mutateAsync(payload);
+        toast.success("Food added");
+      }
+      onOpenChange(false);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed");
     }
+  }
+
+  const pending = createFood.isPending || updateFood.isPending;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{isEdit ? "Edit food" : "New food"}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
+          <div>
+            <Label>Name</Label>
+            <Input {...form.register("name")} />
+          </div>
+          <div>
+            <Label>Brand</Label>
+            <Input {...form.register("brand")} />
+          </div>
+          <div>
+            <Label>Default serving (g)</Label>
+            <Input type="number" step="0.01" {...form.register("default_serving_g")} />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label>kcal /100g</Label>
+              <Input type="number" step="0.01" {...form.register("kcal_per_100g")} />
+            </div>
+            <div>
+              <Label>Protein g /100g</Label>
+              <Input type="number" step="0.01" {...form.register("protein_g_per_100g")} />
+            </div>
+            <div>
+              <Label>Fat g /100g</Label>
+              <Input type="number" step="0.01" {...form.register("fat_g_per_100g")} />
+            </div>
+            <div>
+              <Label>Carb g /100g</Label>
+              <Input type="number" step="0.01" {...form.register("carb_g_per_100g")} />
+            </div>
+          </div>
+          <MicroEditor label="Vitamins" rows={vitamins} setRows={setVitamins}
+            placeholder="e.g. vitamin_c_mg" />
+          <MicroEditor label="Minerals" rows={minerals} setRows={setMinerals}
+            placeholder="e.g. iron_mg" />
+          <Button type="submit" disabled={pending}>
+            {isEdit ? "Update" : "Save"}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export default function FoodsPage() {
+  usePageTitle("Foods");
+  const { data: foods = [], isLoading } = useFoods();
+  const deleteFood = useDeleteFood();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<FoodRow | null>(null);
+
+  function openCreate() {
+    setEditing(null);
+    setDialogOpen(true);
+  }
+  function openEdit(f: FoodRow) {
+    setEditing(f);
+    setDialogOpen(true);
   }
 
   return (
     <div className="p-4 space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-medium md:hidden">Foods</h2>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm"><Plus className="size-4" /> New food</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>New food</DialogTitle></DialogHeader>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
-              <div>
-                <Label>Name</Label>
-                <Input {...form.register("name")} />
-              </div>
-              <div>
-                <Label>Brand</Label>
-                <Input {...form.register("brand")} />
-              </div>
-              <div>
-                <Label>Default serving (g)</Label>
-                <Input type="number" step="0.01" {...form.register("default_serving_g")} />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label>kcal /100g</Label>
-                  <Input type="number" step="0.01" {...form.register("kcal_per_100g")} />
-                </div>
-                <div>
-                  <Label>Protein g /100g</Label>
-                  <Input type="number" step="0.01" {...form.register("protein_g_per_100g")} />
-                </div>
-                <div>
-                  <Label>Fat g /100g</Label>
-                  <Input type="number" step="0.01" {...form.register("fat_g_per_100g")} />
-                </div>
-                <div>
-                  <Label>Carb g /100g</Label>
-                  <Input type="number" step="0.01" {...form.register("carb_g_per_100g")} />
-                </div>
-              </div>
-              <MicroEditor label="Vitamins" rows={vitamins} setRows={setVitamins}
-                placeholder="e.g. vitamin_c_mg" />
-              <MicroEditor label="Minerals" rows={minerals} setRows={setMinerals}
-                placeholder="e.g. iron_mg" />
-              <Button type="submit" disabled={createFood.isPending}>Save</Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <Button size="sm" onClick={openCreate}>
+          <Plus className="size-4" /> New food
+        </Button>
       </div>
+
+      <FoodDialog food={editing} open={dialogOpen} onOpenChange={setDialogOpen} />
 
       {isLoading ? (
         <div className="text-sm text-muted-foreground">Loading...</div>
@@ -206,7 +274,12 @@ export default function FoodsPage() {
                 const vCount = f.vitaminJson ? Object.keys(f.vitaminJson as Record<string, number>).length : 0;
                 const mCount = f.mineralJson ? Object.keys(f.mineralJson as Record<string, number>).length : 0;
                 return (
-                  <tr key={f.id} className="border-t">
+                  <tr
+                    key={f.id}
+                    className="border-t cursor-pointer hover:bg-muted/30"
+                    onDoubleClick={() => openEdit(f)}
+                    title="Double-click to edit"
+                  >
                     <td className="px-3 py-2">{f.name}</td>
                     <td className="px-3 py-2 text-muted-foreground">{f.brand ?? ""}</td>
                     <td className="px-3 py-2 text-right">{f.kcalPer100g ?? "-"}</td>
@@ -218,7 +291,8 @@ export default function FoodsPage() {
                     <td className="px-3 py-2 text-right">{f.defaultServingG ?? "-"}</td>
                     <td className="px-3 py-2 text-right">
                       <button
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           if (confirm(`Delete "${f.name}"?`)) deleteFood.mutate(f.id);
                         }}
                         className="text-muted-foreground hover:text-destructive"
