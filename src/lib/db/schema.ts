@@ -22,6 +22,21 @@ const timestamps = () => ({
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// =============================================================================
+// User
+// =============================================================================
+
+export const appUser = pgTable("app_user", {
+  id: id(),
+  email: text("email").notNull(),
+  name: text("name").notNull(),
+  externalId: text("external_id"),
+  ...timestamps(),
+}, (t) => [
+  uniqueIndex("app_user_email_key").on(t.email),
+  index("app_user_external_id_idx").on(t.externalId),
+]);
+
 export const food = pgTable("food", {
   id: id(),
   name: text("name").notNull(),
