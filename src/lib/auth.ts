@@ -31,30 +31,39 @@ function getClerkJWKS() {
   return clerkJWKS;
 }
 
-const emailCache = new Map<string, { email: string | null; expiresAt: number }>();
-const EMAIL_CACHE_TTL = 10 * 60 * 1000;
+interface ClerkProfile {
+  email: string | null;
+  name: string | null;
+}
+const profileCache = new Map<string, { profile: ClerkProfile; expiresAt: number }>();
+const PROFILE_CACHE_TTL = 10 * 60 * 1000;
 
-async function fetchClerkEmail(userId: string): Promise<string | null> {
-  const entry = emailCache.get(userId);
-  if (entry && Date.now() < entry.expiresAt) return entry.email;
+async function fetchClerkProfile(userId: string): Promise<ClerkProfile> {
+  const entry = profileCache.get(userId);
+  if (entry && Date.now() < entry.expiresAt) return entry.profile;
   const secret = env.CLERK_SECRET_KEY;
-  if (!secret) return null;
+  if (!secret) return { email: null, name: null };
   try {
     const res = await fetch(`https://api.clerk.com/v1/users/${userId}`, {
       headers: { Authorization: `Bearer ${secret}` },
     });
-    if (!res.ok) return null;
+    if (!res.ok) return { email: null, name: null };
     const data = await res.json() as {
       email_addresses?: Array<{ email_address: string; id: string }>;
       primary_email_address_id?: string;
-      first_name?: string;
+      first_name?: string | null;
+      last_name?: string | null;
+      username?: string | null;
     };
     const primary = data.email_addresses?.find((e) => e.id === data.primary_email_address_id);
     const email = primary?.email_address ?? data.email_addresses?.[0]?.email_address ?? null;
-    emailCache.set(userId, { email, expiresAt: Date.now() + EMAIL_CACHE_TTL });
-    return email;
+    const fullName = [data.first_name, data.last_name].filter(Boolean).join(" ").trim();
+    const name = fullName || data.username || (email ? email.split("@")[0] : null);
+    const profile: ClerkProfile = { email, name };
+    profileCache.set(userId, { profile, expiresAt: Date.now() + PROFILE_CACHE_TTL });
+    return profile;
   } catch {
-    return null;
+    return { email: null, name: null };
   }
 }
 
@@ -76,11 +85,11 @@ export async function authenticate(req: Request): Promise<AuthResult | null> {
     const { payload } = await jose.jwtVerify(token, jwks);
     const userId = payload.sub as string;
     if (!userId) return null;
-    const email = await fetchClerkEmail(userId);
+    const { email, name } = await fetchClerkProfile(userId);
     return {
       authenticated: true,
       userId,
-      name: email?.split("@")[0] ?? userId,
+      name: name ?? userId,
       email: email ?? "",
     };
   } catch {

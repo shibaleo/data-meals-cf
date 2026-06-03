@@ -51,6 +51,42 @@ export function useCreateMeal() {
   });
 }
 
+export function useUpdateMeal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: {
+      id: string;
+      body: Parameters<typeof rpc.api.v1.meals[":id"]["$put"]>[0]["json"];
+    }) => unwrap(rpc.api.v1.meals[":id"].$put({ param: { id }, json: body })),
+    onSuccess: (_res, { id, body }) => {
+      qc.setQueryData<MealRow[]>(mealsKeys.list(), (prev) => {
+        if (!prev) return prev;
+        const now = new Date().toISOString();
+        return prev.map((r) => {
+          if (r.id !== id) return r;
+          const next: MealRow = {
+            ...r,
+            ...(body.name !== undefined ? { name: body.name } : {}),
+            ...(body.notes !== undefined ? { notes: body.notes ?? null } : {}),
+            updatedAt: now,
+            ...(body.items !== undefined ? {
+              items: body.items.map((it, i) => ({
+                id: `${id}-item-${i}`,
+                mealId: id,
+                foodId: it.food_id,
+                coef: String(it.coef),
+                sortOrder: it.sort_order,
+                createdAt: now,
+              })),
+            } : {}),
+          } as MealRow;
+          return next;
+        }).sort((a, b) => a.name.localeCompare(b.name));
+      });
+    },
+  });
+}
+
 export function useDeleteMeal() {
   const qc = useQueryClient();
   return useMutation({
