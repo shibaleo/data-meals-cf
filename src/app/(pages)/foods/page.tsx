@@ -20,7 +20,6 @@ import {
 const formSchema = z.object({
   name: z.string().min(1),
   brand: z.string().optional(),
-  default_serving_g: z.string().optional(),
   kcal_per_100g: z.string().optional(),
   protein_g_per_100g: z.string().optional(),
   fat_g_per_100g: z.string().optional(),
@@ -160,7 +159,6 @@ function FoodDialog({
       form.reset({
         name: food.name,
         brand: food.brand ?? "",
-        default_serving_g: food.defaultServingG ?? "",
         kcal_per_100g: scale(food.kcalPer100g),
         protein_g_per_100g: scale(food.proteinGPer100g),
         fat_g_per_100g: scale(food.fatGPer100g),
@@ -249,7 +247,6 @@ function FoodDialog({
     const payload = {
       name: values.name,
       brand: values.brand || null,
-      default_serving_g: values.default_serving_g || null,
       serving_basis: basis,
       label_basis_amount: String(labelBasis),
       kcal_per_100g: toPer100(values.kcal_per_100g),
@@ -298,22 +295,16 @@ function FoodDialog({
             <Label>Brand</Label>
             <Input {...form.register("brand")} />
           </div>
-          <div className="grid grid-cols-[1fr_auto] gap-2 items-end">
-            <div>
-              <Label>Default serving ({basis})</Label>
-              <Input type="number" step="0.01" {...form.register("default_serving_g")} />
-            </div>
-            <div>
-              <Label>Basis</Label>
-              <select
-                className="h-9 rounded-md border bg-background px-2 text-sm"
-                value={basis}
-                onChange={(e) => setBasis(e.target.value as ServingBasis)}
-              >
-                <option value="g">g</option>
-                <option value="ml">ml</option>
-              </select>
-            </div>
+          <div>
+            <Label>Basis</Label>
+            <select
+              className="h-9 rounded-md border bg-background px-2 text-sm"
+              value={basis}
+              onChange={(e) => setBasis(e.target.value as ServingBasis)}
+            >
+              <option value="g">g</option>
+              <option value="ml">ml</option>
+            </select>
           </div>
           <div className="rounded-md border border-border/60 bg-muted/20 p-3 space-y-1">
             <Label className="block">Label basis (per X {basis})</Label>
@@ -408,7 +399,6 @@ export default function FoodsPage() {
                 <th className="px-3 py-2 text-right">V</th>
                 <th className="px-3 py-2 text-right">M</th>
                 <th className="px-3 py-2 text-right">per</th>
-                <th className="px-3 py-2 text-right">Serving</th>
                 <th className="px-3 py-2 w-10"></th>
               </tr>
             </thead>
@@ -439,7 +429,6 @@ export default function FoodsPage() {
                     <td className="px-3 py-2 text-right text-muted-foreground">{vCount || "-"}</td>
                     <td className="px-3 py-2 text-right text-muted-foreground">{mCount || "-"}</td>
                     <td className="px-3 py-2 text-right text-muted-foreground">{fmt(lb)}{sb}</td>
-                    <td className="px-3 py-2 text-right">{f.defaultServingG ?? "-"}{sb}</td>
                     <td className="px-3 py-2 text-right">
                       <button
                         onClick={(e) => {

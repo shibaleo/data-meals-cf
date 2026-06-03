@@ -16,7 +16,6 @@ function bodyToRowPatch(body: Partial<FoodBody>): Partial<FoodRow> {
   const out: Record<string, unknown> = {};
   if (body.name !== undefined) out.name = body.name;
   if (body.brand !== undefined) out.brand = body.brand;
-  if (body.default_serving_g !== undefined) out.defaultServingG = body.default_serving_g;
   if (body.serving_basis !== undefined) out.servingBasis = body.serving_basis;
   if (body.label_basis_amount !== undefined) out.labelBasisAmount = body.label_basis_amount;
   if (body.kcal_per_100g !== undefined) out.kcalPer100g = body.kcal_per_100g;
@@ -43,7 +42,6 @@ function upsertRow(
         id,
         name: "",
         brand: null,
-        defaultServingG: null,
         servingBasis: "g",
         labelBasisAmount: "100",
         notes: null,

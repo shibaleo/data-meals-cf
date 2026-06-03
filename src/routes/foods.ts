@@ -10,7 +10,6 @@ const rowSelect = {
   id: food.id,
   name: food.name,
   brand: food.brand,
-  defaultServingG: food.defaultServingG,
   servingBasis: food.servingBasis,
   labelBasisAmount: food.labelBasisAmount,
   notes: food.notes,
@@ -49,7 +48,6 @@ const app = new Hono()
       name: body.name,
       brand: body.brand ?? null,
       sourceLabelUrl: body.source_label_url ?? null,
-      defaultServingG: body.default_serving_g ?? null,
       servingBasis: body.serving_basis ?? "g",
       labelBasisAmount: body.label_basis_amount ?? "100",
       notes: body.notes ?? null,
@@ -73,7 +71,6 @@ const app = new Hono()
     if (body.name !== undefined) foodPatch.name = body.name;
     if (body.brand !== undefined) foodPatch.brand = body.brand;
     if (body.source_label_url !== undefined) foodPatch.sourceLabelUrl = body.source_label_url;
-    if (body.default_serving_g !== undefined) foodPatch.defaultServingG = body.default_serving_g;
     if (body.serving_basis !== undefined) foodPatch.servingBasis = body.serving_basis;
     if (body.label_basis_amount !== undefined) foodPatch.labelBasisAmount = body.label_basis_amount;
     if (body.notes !== undefined) foodPatch.notes = body.notes;

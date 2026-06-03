@@ -6,7 +6,6 @@ export const foodCreateSchema = z.object({
   name: z.string().min(1),
   brand: z.string().nullable().optional(),
   source_label_url: z.string().url().nullable().optional(),
-  default_serving_g: numericString.nullable().optional(),
   serving_basis: z.enum(["g", "ml"]).optional(),
   label_basis_amount: numericString.optional(),
   notes: z.string().nullable().optional(),

@@ -26,7 +26,6 @@ export const food = pgTable("food", {
   name: text("name").notNull(),
   brand: text("brand"),
   sourceLabelUrl: text("source_label_url"),
-  defaultServingG: numeric("default_serving_g", { precision: 7, scale: 2 }),
   servingBasis: text("serving_basis").notNull().default("g"),
   labelBasisAmount: numeric("label_basis_amount", { precision: 7, scale: 2 }).notNull().default("100"),
   notes: text("notes"),
