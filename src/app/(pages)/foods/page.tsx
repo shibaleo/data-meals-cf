@@ -65,12 +65,16 @@ function MicroEditor({
   setRows,
   placeholder,
   unitSuffix,
+  suggestions,
+  datalistId,
 }: {
   label: string;
   rows: MicroRow[];
   setRows: (r: MicroRow[]) => void;
   placeholder: string;
   unitSuffix: string;
+  suggestions: string[];
+  datalistId: string;
 }) {
   return (
     <div className="space-y-2 rounded-md border border-border/60 bg-muted/20 p-3">
@@ -81,6 +85,11 @@ function MicroEditor({
           <Plus className="size-3" /> Add
         </Button>
       </div>
+      {suggestions.length === 0 ? null : (
+        <datalist id={datalistId}>
+          {suggestions.map((s) => <option key={s} value={s} />)}
+        </datalist>
+      )}
       {rows.length === 0 ? (
         <p className="text-xs text-muted-foreground">No entries. Add one above.</p>
       ) : (
@@ -89,6 +98,7 @@ function MicroEditor({
             <div key={i} className="flex gap-2 items-center">
               <Input
                 className="flex-1 h-8" placeholder={placeholder}
+                list={datalistId}
                 value={r.key}
                 onChange={(e) => {
                   const v = e.target.value;
@@ -115,14 +125,39 @@ function MicroEditor({
   );
 }
 
+// Seeded suggestions so the very first food has something to autocomplete.
+const VITAMIN_SEEDS = [
+  "vitamin_a_ug", "vitamin_b1_mg", "vitamin_b2_mg", "vitamin_b6_mg", "vitamin_b12_ug",
+  "vitamin_c_mg", "vitamin_d_ug", "vitamin_e_mg", "vitamin_k_ug",
+  "niacin_mg", "folate_ug", "pantothenic_acid_mg", "biotin_ug",
+];
+const MINERAL_SEEDS = [
+  "salt_equivalent_g", "sodium_mg",
+  "calcium_mg", "iron_mg", "magnesium_mg", "potassium_mg", "phosphorus_mg",
+  "zinc_mg", "copper_mg", "manganese_mg", "selenium_ug", "iodine_ug",
+];
+
+function collectKeys(foods: FoodRow[], field: "vitaminJson" | "mineralJson"): string[] {
+  const set = new Set<string>();
+  for (const f of foods) {
+    const j = f[field] as unknown;
+    if (j && typeof j === "object") {
+      for (const k of Object.keys(j as Record<string, unknown>)) set.add(k);
+    }
+  }
+  return Array.from(set);
+}
+
 function FoodDialog({
   food,
   open,
   onOpenChange,
+  allFoods,
 }: {
   food: FoodRow | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  allFoods: FoodRow[];
 }) {
   const isEdit = food !== null;
   const createFood = useCreateFood();
@@ -274,12 +309,32 @@ function FoodDialog({
   const unit = `${labelBasis}${basis}`;
   const microSuffix = `/${unit}`;
 
+  // Suggestions = union(seeded, every key ever used across foods).
+  const vitaminSuggestions = Array.from(new Set([
+    ...collectKeys(allFoods, "vitaminJson"),
+    ...VITAMIN_SEEDS,
+  ])).sort();
+  const mineralSuggestions = Array.from(new Set([
+    ...collectKeys(allFoods, "mineralJson"),
+    ...MINERAL_SEEDS,
+  ])).sort();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit food" : "New food"}</DialogTitle>
         </DialogHeader>
+        <details className="rounded-md border border-border/60 bg-muted/10 px-3 py-2 text-xs text-muted-foreground">
+          <summary className="cursor-pointer select-none">入力ルール</summary>
+          <ul className="mt-2 space-y-1 list-disc list-inside">
+            <li>ラベルの「100g/100ml/1食 X g あたり」を <strong>Label basis</strong> に入れて、数値はラベル通り転記。保存時に per-100 に正規化される。</li>
+            <li>範囲表記 (例: 2.8〜5.9g) は <strong>中央値</strong> で。</li>
+            <li>飽和脂肪酸 / 糖質 / 食物繊維など内訳は今のスキーマだと入れ場所なし → 飛ばす。</li>
+            <li>Vitamin / Mineral key は <code>snake_case_unit</code> (例: <code>vitamin_c_mg</code>, <code>calcium_mg</code>, <code>salt_equivalent_g</code>)。入力欄で候補が出るので既存 key を使い回す。</li>
+            <li>食塩相当量は mineral に <code>salt_equivalent_g</code>。</li>
+          </ul>
+        </details>
         <form
           onSubmit={form.handleSubmit(onSubmit, (errors) => {
             const first = Object.values(errors)[0];
@@ -342,9 +397,11 @@ function FoodDialog({
             </div>
           </div>
           <MicroEditor label="Vitamins" rows={vitamins} setRows={setVitamins}
-            placeholder="e.g. vitamin_c_mg" unitSuffix={microSuffix} />
+            placeholder="e.g. vitamin_c_mg" unitSuffix={microSuffix}
+            suggestions={vitaminSuggestions} datalistId="vitamin-keys" />
           <MicroEditor label="Minerals" rows={minerals} setRows={setMinerals}
-            placeholder="e.g. iron_mg" unitSuffix={microSuffix} />
+            placeholder="e.g. iron_mg" unitSuffix={microSuffix}
+            suggestions={mineralSuggestions} datalistId="mineral-keys" />
           <Button type="submit" disabled={pending || (isEdit && !dirty)}>
             {isEdit ? "Update" : "Save"}
           </Button>
@@ -379,7 +436,7 @@ export default function FoodsPage() {
         </Button>
       </div>
 
-      <FoodDialog food={editing} open={dialogOpen} onOpenChange={setDialogOpen} />
+      <FoodDialog food={editing} open={dialogOpen} onOpenChange={setDialogOpen} allFoods={foods} />
 
       {isLoading ? (
         <div className="text-sm text-muted-foreground">Loading...</div>
