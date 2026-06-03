@@ -13,8 +13,9 @@ export const foodCreateSchema = z.object({
   protein_g_per_100g: numericString.optional(),
   fat_g_per_100g: numericString.optional(),
   carb_g_per_100g: numericString.optional(),
-  vitamin_g_per_100g: numericString.optional(),
-  mineral_g_per_100g: numericString.optional(),
+  // free-form key → amount per 100g (e.g. { "vitamin_c_mg": 30 })
+  vitamin_json: z.record(z.string(), z.number()).optional(),
+  mineral_json: z.record(z.string(), z.number()).optional(),
 });
 
 export const foodUpdateSchema = foodCreateSchema.partial();

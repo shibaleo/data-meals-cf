@@ -5,6 +5,7 @@ import {
   integer,
   timestamp,
   numeric,
+  jsonb,
   uniqueIndex,
   index,
   check,
@@ -39,8 +40,8 @@ export const nutrient = pgTable("nutrient", {
   proteinGPer100g: numeric("protein_g_per_100g", { precision: 7, scale: 2 }).notNull().default("0"),
   fatGPer100g: numeric("fat_g_per_100g", { precision: 7, scale: 2 }).notNull().default("0"),
   carbGPer100g: numeric("carb_g_per_100g", { precision: 7, scale: 2 }).notNull().default("0"),
-  vitaminGPer100g: numeric("vitamin_g_per_100g", { precision: 7, scale: 2 }).notNull().default("0"),
-  mineralGPer100g: numeric("mineral_g_per_100g", { precision: 7, scale: 2 }).notNull().default("0"),
+  vitaminJson: jsonb("vitamin_json").notNull().default(sql`'{}'::jsonb`),
+  mineralJson: jsonb("mineral_json").notNull().default(sql`'{}'::jsonb`),
   ...timestamps(),
 });
 
