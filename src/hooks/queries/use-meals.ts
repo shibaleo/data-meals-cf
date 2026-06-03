@@ -7,6 +7,7 @@ export const mealsKeys = {
 };
 
 export type MealRow = RpcData<typeof rpc.api.v1.meals.$get>["data"][number];
+type MealBody = Parameters<typeof rpc.api.v1.meals.$post>[0]["json"];
 
 export function useMeals() {
   return useQuery({
@@ -15,12 +16,38 @@ export function useMeals() {
   });
 }
 
+// Hyperdrive may serve a stale list for up to its TTL after a write, so we
+// patch the local cache from the body we just sent instead of refetching.
+// See memory/feedback_cache_pattern.md.
+
 export function useCreateMeal() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: Parameters<typeof rpc.api.v1.meals.$post>[0]["json"]) =>
-      unwrap(rpc.api.v1.meals.$post({ json: body })),
-    onSuccess: () => qc.invalidateQueries({ queryKey: mealsKeys.list() }),
+    mutationFn: (body: MealBody) => unwrap(rpc.api.v1.meals.$post({ json: body })),
+    onSuccess: (res, body) => {
+      const created = res.data as { id: string } | null;
+      if (!created) return;
+      const now = new Date().toISOString();
+      const newRow = {
+        id: created.id,
+        name: body.name,
+        notes: body.notes ?? null,
+        createdAt: now,
+        updatedAt: now,
+        items: body.items.map((it, i) => ({
+          id: `${created.id}-item-${i}`,
+          mealId: created.id,
+          foodId: it.food_id,
+          coef: String(it.coef),
+          sortOrder: it.sort_order,
+          createdAt: now,
+        })),
+      } as unknown as MealRow;
+      qc.setQueryData<MealRow[]>(mealsKeys.list(), (prev) => {
+        const base = prev ?? [];
+        return [...base, newRow].sort((a, b) => a.name.localeCompare(b.name));
+      });
+    },
   });
 }
 
@@ -28,6 +55,10 @@ export function useDeleteMeal() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => unwrap(rpc.api.v1.meals[":id"].$delete({ param: { id } })),
-    onSuccess: () => qc.invalidateQueries({ queryKey: mealsKeys.list() }),
+    onSuccess: (_res, id) => {
+      qc.setQueryData<MealRow[]>(mealsKeys.list(), (prev) =>
+        prev ? prev.filter((r) => r.id !== id) : prev,
+      );
+    },
   });
 }
