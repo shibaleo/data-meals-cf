@@ -21,13 +21,14 @@ const formSchema = z.object({
   name: z.string().min(1),
   brand: z.string().optional(),
   default_serving_g: z.string().optional(),
-  serving_basis: z.enum(["g", "ml"]).default("g"),
   kcal_per_100g: z.string().optional(),
   protein_g_per_100g: z.string().optional(),
   fat_g_per_100g: z.string().optional(),
   carb_g_per_100g: z.string().optional(),
 });
 type FormValues = z.infer<typeof formSchema>;
+
+type ServingBasis = "g" | "ml";
 
 interface MicroRow { key: string; value: string }
 
@@ -116,13 +117,12 @@ function FoodDialog({
   const updateFood = useUpdateFood();
   const [vitamins, setVitamins] = useState<MicroRow[]>([]);
   const [minerals, setMinerals] = useState<MicroRow[]>([]);
+  const [basis, setBasis] = useState<ServingBasis>("g");
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: { name: "", serving_basis: "g" },
+    defaultValues: { name: "" },
   });
-
-  const basis = form.watch("serving_basis") ?? "g";
 
   // Sync form + micros each time dialog opens with a different target
   useEffect(() => {
@@ -132,16 +132,17 @@ function FoodDialog({
         name: food.name,
         brand: food.brand ?? "",
         default_serving_g: food.defaultServingG ?? "",
-        serving_basis: (food.servingBasis as "g" | "ml") ?? "g",
         kcal_per_100g: food.kcalPer100g ?? "",
         protein_g_per_100g: food.proteinGPer100g ?? "",
         fat_g_per_100g: food.fatGPer100g ?? "",
         carb_g_per_100g: food.carbGPer100g ?? "",
       });
+      setBasis((food.servingBasis as ServingBasis) ?? "g");
       setVitamins(jsonToRows(food.vitaminJson));
       setMinerals(jsonToRows(food.mineralJson));
     } else {
-      form.reset({ name: "", serving_basis: "g" });
+      form.reset({ name: "" });
+      setBasis("g");
       setVitamins([]);
       setMinerals([]);
     }
@@ -152,7 +153,7 @@ function FoodDialog({
       name: values.name,
       brand: values.brand || null,
       default_serving_g: values.default_serving_g || null,
-      serving_basis: values.serving_basis ?? "g",
+      serving_basis: basis,
       kcal_per_100g: values.kcal_per_100g || "0",
       protein_g_per_100g: values.protein_g_per_100g || "0",
       fat_g_per_100g: values.fat_g_per_100g || "0",
@@ -182,7 +183,13 @@ function FoodDialog({
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit food" : "New food"}</DialogTitle>
         </DialogHeader>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
+        <form
+          onSubmit={form.handleSubmit(onSubmit, (errors) => {
+            const first = Object.values(errors)[0];
+            toast.error((first as { message?: string } | undefined)?.message ?? "Validation failed");
+          })}
+          className="space-y-3"
+        >
           <div>
             <Label>Name</Label>
             <Input {...form.register("name")} />
@@ -200,7 +207,8 @@ function FoodDialog({
               <Label>Basis</Label>
               <select
                 className="h-9 rounded-md border bg-background px-2 text-sm"
-                {...form.register("serving_basis")}
+                value={basis}
+                onChange={(e) => setBasis(e.target.value as ServingBasis)}
               >
                 <option value="g">g</option>
                 <option value="ml">ml</option>
