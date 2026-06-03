@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FileText, Plus, Trash2 } from "lucide-react";
+import { FileText, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { usePageTitle } from "@/lib/page-context";
 import {
-  useMeals, useCreateMeal, useUpdateMeal, useDeleteMeal, type MealRow,
+  useMeals, useCreateMeal, useUpdateMeal, useDeleteMeal, useRestoreMeal, type MealRow,
 } from "@/hooks/queries/use-meals";
 import { useFoods, type FoodRow } from "@/hooks/queries/use-foods";
 import { Button } from "@/components/ui/button";
@@ -173,9 +173,11 @@ function MealDialog({
 
 export default function MealsPage() {
   usePageTitle("Meals");
-  const { data: meals = [], isLoading } = useMeals();
+  const [showArchived, setShowArchived] = useState(false);
+  const { data: meals = [], isLoading } = useMeals(showArchived);
   const { data: foods = [] } = useFoods();
   const deleteMeal = useDeleteMeal();
+  const restoreMeal = useRestoreMeal();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<MealRow | null>(null);
 
@@ -196,11 +198,18 @@ export default function MealsPage() {
 
   return (
     <div className="p-4 space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <h2 className="text-base font-medium md:hidden">Meals</h2>
-        <Button size="sm" onClick={() => { setEditing(null); setDialogOpen(true); }}>
-          <Plus className="size-4" /> New meal
-        </Button>
+        <div className="flex items-center gap-2 ml-auto">
+          <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
+            <input type="checkbox" checked={showArchived}
+              onChange={(e) => setShowArchived(e.target.checked)} />
+            Show archived
+          </label>
+          <Button size="sm" onClick={() => { setEditing(null); setDialogOpen(true); }}>
+            <Plus className="size-4" /> New meal
+          </Button>
+        </div>
       </div>
 
       <MealDialog meal={editing} open={dialogOpen} onOpenChange={setDialogOpen} foods={foods} />
@@ -221,9 +230,11 @@ export default function MealsPage() {
               </tr>
             </thead>
             <tbody>
-              {meals.map((m) => (
+              {meals.map((m) => {
+                const archived = !!m.archivedAt;
+                return (
                 <tr key={m.id}
-                  className="border-t cursor-pointer hover:bg-muted/30"
+                  className={`border-t cursor-pointer hover:bg-muted/30 ${archived ? "opacity-50" : ""}`}
                   onDoubleClick={() => { setEditing(m); setDialogOpen(true); }}
                   title="Double-click to edit">
                   <td className="px-3 py-2 font-medium">
@@ -235,17 +246,27 @@ export default function MealsPage() {
                   <td className="px-3 py-2">{summary(m)}</td>
                   <td className="px-3 py-2 text-right text-muted-foreground">{m.items.length}</td>
                   <td className="px-3 py-2 text-right">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm(`Delete "${m.name}"?`)) deleteMeal.mutate(m.id);
-                      }}
-                      className="text-muted-foreground hover:text-destructive">
-                      <Trash2 className="size-4" />
-                    </button>
+                    {archived ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); restoreMeal.mutate(m.id); }}
+                        className="text-muted-foreground hover:text-foreground"
+                        title="Restore">
+                        <RotateCcw className="size-4" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm(`Delete "${m.name}"?`)) deleteMeal.mutate(m.id);
+                        }}
+                        className="text-muted-foreground hover:text-destructive">
+                        <Trash2 className="size-4" />
+                      </button>
+                    )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

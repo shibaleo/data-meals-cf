@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { eq, asc, isNull } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "@/lib/db";
 import { food, nutrient } from "@/lib/db/schema";
 import { foodCreateSchema, foodUpdateSchema } from "@/lib/schemas/food";
@@ -20,6 +21,7 @@ const rowSelect = {
   carbGPer100g: nutrient.carbGPer100g,
   vitaminJson: nutrient.vitaminJson,
   mineralJson: nutrient.mineralJson,
+  archivedAt: food.archivedAt,
   createdAt: food.createdAt,
   updatedAt: food.updatedAt,
 };
@@ -34,14 +36,21 @@ async function fetchRow(id: string) {
   return rows[0] ?? null;
 }
 
+const listQuery = z.object({
+  include_archived: z.enum(["0", "1"]).optional(),
+});
+
 const app = new Hono()
-  .get("/", async (c) => {
-    const rows = await db
+  .get("/", zValidator("query", listQuery), async (c) => {
+    const { include_archived } = c.req.valid("query");
+    const includeArchived = include_archived === "1";
+    const baseSelect = db
       .select(rowSelect)
       .from(food)
-      .leftJoin(nutrient, eq(nutrient.foodId, food.id))
-      .where(isNull(food.archivedAt))
-      .orderBy(asc(food.name));
+      .leftJoin(nutrient, eq(nutrient.foodId, food.id));
+    const rows = includeArchived
+      ? await baseSelect.orderBy(asc(food.name))
+      : await baseSelect.where(isNull(food.archivedAt)).orderBy(asc(food.name));
     return c.json({ data: rows });
   })
   .post("/", zValidator("json", foodCreateSchema), async (c) => {
@@ -96,6 +105,12 @@ const app = new Hono()
     // food name via JOIN. List/selector queries filter archivedAt IS NULL.
     const { id } = c.req.valid("param");
     await db.update(food).set({ archivedAt: new Date(), updatedAt: new Date() })
+      .where(eq(food.id, id));
+    return c.json({ data: { id } });
+  })
+  .post("/:id/restore", zValidator("param", uuidParam), async (c) => {
+    const { id } = c.req.valid("param");
+    await db.update(food).set({ archivedAt: null, updatedAt: new Date() })
       .where(eq(food.id, id));
     return c.json({ data: { id } });
   });

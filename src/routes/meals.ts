@@ -1,16 +1,24 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { eq, asc, inArray, isNull } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "@/lib/db";
 import { meal, mealFood } from "@/lib/db/schema";
 import { mealCreateSchema, mealUpdateSchema } from "@/lib/schemas/meal";
 import { uuidParam } from "@/lib/schemas/common";
 
+const listQuery = z.object({
+  include_archived: z.enum(["0", "1"]).optional(),
+});
+
 const app = new Hono()
-  .get("/", async (c) => {
-    const meals = await db.select().from(meal)
-      .where(isNull(meal.archivedAt))
-      .orderBy(asc(meal.name));
+  .get("/", zValidator("query", listQuery), async (c) => {
+    const { include_archived } = c.req.valid("query");
+    const includeArchived = include_archived === "1";
+    const baseSelect = db.select().from(meal);
+    const meals = includeArchived
+      ? await baseSelect.orderBy(asc(meal.name))
+      : await baseSelect.where(isNull(meal.archivedAt)).orderBy(asc(meal.name));
     if (meals.length === 0) return c.json({ data: [] });
     const items = await db.select().from(mealFood)
       .where(inArray(mealFood.mealId, meals.map((m) => m.id)))
@@ -63,6 +71,12 @@ const app = new Hono()
     // Soft delete (see foods.ts for rationale).
     const { id } = c.req.valid("param");
     await db.update(meal).set({ archivedAt: new Date(), updatedAt: new Date() })
+      .where(eq(meal.id, id));
+    return c.json({ data: { id } });
+  })
+  .post("/:id/restore", zValidator("param", uuidParam), async (c) => {
+    const { id } = c.req.valid("param");
+    await db.update(meal).set({ archivedAt: null, updatedAt: new Date() })
       .where(eq(meal.id, id));
     return c.json({ data: { id } });
   });

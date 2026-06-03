@@ -8,6 +8,7 @@ import health from "@/routes/health";
 import foods from "@/routes/foods";
 import meals from "@/routes/meals";
 import intakes from "@/routes/intakes";
+import analytics from "@/routes/analytics";
 
 const v1 = new Hono<Env>()
   .use("*", logger())
@@ -30,6 +31,7 @@ const v1 = new Hono<Env>()
   .route("/foods", foods)
   .route("/meals", meals)
   .route("/intakes", intakes)
+  .route("/analytics", analytics)
   .get("/me", (c) => {
     const r = c.get("authResult");
     return c.json({ data: { id: r.userId, name: r.name, email: r.email } });

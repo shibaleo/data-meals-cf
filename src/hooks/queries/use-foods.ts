@@ -3,7 +3,8 @@ import { rpc, unwrap, type RpcData } from "@/lib/rpc-client";
 
 export const foodsKeys = {
   all: ["foods"] as const,
-  list: () => [...foodsKeys.all, "list"] as const,
+  list: (includeArchived = false) =>
+    [...foodsKeys.all, "list", includeArchived] as const,
 };
 
 export type FoodRow = RpcData<typeof rpc.api.v1.foods.$get>["data"][number];
@@ -29,16 +30,19 @@ function bodyToRowPatch(body: Partial<FoodBody>): Partial<FoodRow> {
   return out as Partial<FoodRow>;
 }
 
-function upsertRow(
-  qc: ReturnType<typeof useQueryClient>,
-  id: string,
-  patch: Partial<FoodRow>,
-) {
-  qc.setQueryData<FoodRow[]>(foodsKeys.list(), (prev) => {
+// Both cache lists (active-only and include-archived) need to be kept in sync
+// so the user sees the change in whichever view they're on.
+function eachListCache(qc: ReturnType<typeof useQueryClient>, fn: (prev: FoodRow[] | undefined) => FoodRow[] | undefined) {
+  for (const ia of [false, true]) {
+    qc.setQueryData<FoodRow[]>(foodsKeys.list(ia), (prev) => fn(prev));
+  }
+}
+
+function upsertRow(qc: ReturnType<typeof useQueryClient>, id: string, patch: Partial<FoodRow>) {
+  eachListCache(qc, (prev) => {
     if (!prev) return prev;
     const idx = prev.findIndex((r) => r.id === id);
     if (idx === -1) {
-      // New row — fill in safe defaults for fields not in the patch.
       const now = new Date().toISOString();
       const row = {
         id,
@@ -54,6 +58,7 @@ function upsertRow(
         carbGPer100g: "0",
         vitaminJson: {},
         mineralJson: {},
+        archivedAt: null,
         createdAt: now,
         updatedAt: now,
         ...patch,
@@ -66,10 +71,13 @@ function upsertRow(
   });
 }
 
-export function useFoods() {
+export function useFoods(includeArchived = false) {
   return useQuery({
-    queryKey: foodsKeys.list(),
-    queryFn: () => unwrap(rpc.api.v1.foods.$get()).then((r) => r.data),
+    queryKey: foodsKeys.list(includeArchived),
+    queryFn: () =>
+      unwrap(rpc.api.v1.foods.$get({
+        query: includeArchived ? { include_archived: "1" } : {},
+      })).then((r) => r.data),
   });
 }
 
@@ -103,9 +111,24 @@ export function useDeleteFood() {
   return useMutation({
     mutationFn: (id: string) => unwrap(rpc.api.v1.foods[":id"].$delete({ param: { id } })),
     onSuccess: (_res, id) => {
-      qc.setQueryData<FoodRow[]>(foodsKeys.list(), (prev) =>
-        prev ? prev.filter((r) => r.id !== id) : prev,
-      );
+      // Active list: drop the row. Archived-included list: mark as archived.
+      qc.setQueryData<FoodRow[]>(foodsKeys.list(false), (prev) =>
+        prev ? prev.filter((r) => r.id !== id) : prev);
+      qc.setQueryData<FoodRow[]>(foodsKeys.list(true), (prev) =>
+        prev ? prev.map((r) => r.id === id ? { ...r, archivedAt: new Date().toISOString() } : r) : prev);
+    },
+  });
+}
+
+export function useRestoreFood() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => unwrap(rpc.api.v1.foods[":id"].restore.$post({ param: { id } })),
+    onSuccess: (_res, id) => {
+      qc.setQueryData<FoodRow[]>(foodsKeys.list(true), (prev) =>
+        prev ? prev.map((r) => r.id === id ? { ...r, archivedAt: null } : r) : prev);
+      // Invalidate active list to refetch (or move the row in if we had it).
+      qc.invalidateQueries({ queryKey: foodsKeys.list(false) });
     },
   });
 }
