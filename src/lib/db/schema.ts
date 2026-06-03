@@ -6,6 +6,7 @@ import {
   timestamp,
   numeric,
   jsonb,
+  date,
   uniqueIndex,
   index,
   check,
@@ -29,6 +30,7 @@ export const food = pgTable("food", {
   servingBasis: text("serving_basis").notNull().default("g"),
   labelBasisAmount: numeric("label_basis_amount", { precision: 7, scale: 2 }).notNull().default("100"),
   notes: text("notes"),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
   ...timestamps(),
 }, (t) => [
   index("food_name_idx").on(t.name),
@@ -52,6 +54,7 @@ export const meal = pgTable("meal", {
   id: id(),
   name: text("name").notNull(),
   notes: text("notes"),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
   ...timestamps(),
 }, (t) => [
   index("meal_name_idx").on(t.name),
@@ -74,11 +77,17 @@ export const mealFood = pgTable("meal_food", {
 export const intake = pgTable("intake", {
   id: id(),
   eatenAt: timestamp("eaten_at", { withTimezone: true }).notNull(),
+  // Generated stored column — JST calendar date of eaten_at. Used by
+  // v_intake_food and any analytical query that wants a daily rollup.
+  // Drizzle doesn't insert/update generated columns, so this field is
+  // read-only at the ORM level.
+  intakeDateJst: date("intake_date_jst").notNull(),
   mealKind: text("meal_kind").notNull(),
   notes: text("notes"),
   ...timestamps(),
 }, (t) => [
   index("intake_eaten_at_idx").on(t.eatenAt),
+  index("intake_date_jst_idx").on(t.intakeDateJst),
   check("intake_meal_kind_check", sql`${t.mealKind} IN ('breakfast','lunch','dinner','snack')`),
 ]);
 

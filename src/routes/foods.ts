@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { food, nutrient } from "@/lib/db/schema";
 import { foodCreateSchema, foodUpdateSchema } from "@/lib/schemas/food";
@@ -40,6 +40,7 @@ const app = new Hono()
       .select(rowSelect)
       .from(food)
       .leftJoin(nutrient, eq(nutrient.foodId, food.id))
+      .where(isNull(food.archivedAt))
       .orderBy(asc(food.name));
     return c.json({ data: rows });
   })
@@ -91,8 +92,11 @@ const app = new Hono()
     return c.json({ data: row });
   })
   .delete("/:id", zValidator("param", uuidParam), async (c) => {
+    // Soft delete — keep the row so historical intakes can still resolve the
+    // food name via JOIN. List/selector queries filter archivedAt IS NULL.
     const { id } = c.req.valid("param");
-    await db.delete(food).where(eq(food.id, id));
+    await db.update(food).set({ archivedAt: new Date(), updatedAt: new Date() })
+      .where(eq(food.id, id));
     return c.json({ data: { id } });
   });
 
