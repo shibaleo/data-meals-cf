@@ -21,6 +21,7 @@ const formSchema = z.object({
   name: z.string().min(1),
   brand: z.string().optional(),
   default_serving_g: z.string().optional(),
+  serving_basis: z.enum(["g", "ml"]).default("g"),
   kcal_per_100g: z.string().optional(),
   protein_g_per_100g: z.string().optional(),
   fat_g_per_100g: z.string().optional(),
@@ -118,8 +119,10 @@ function FoodDialog({
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: { name: "" },
+    defaultValues: { name: "", serving_basis: "g" },
   });
+
+  const basis = form.watch("serving_basis") ?? "g";
 
   // Sync form + micros each time dialog opens with a different target
   useEffect(() => {
@@ -129,6 +132,7 @@ function FoodDialog({
         name: food.name,
         brand: food.brand ?? "",
         default_serving_g: food.defaultServingG ?? "",
+        serving_basis: (food.servingBasis as "g" | "ml") ?? "g",
         kcal_per_100g: food.kcalPer100g ?? "",
         protein_g_per_100g: food.proteinGPer100g ?? "",
         fat_g_per_100g: food.fatGPer100g ?? "",
@@ -137,7 +141,7 @@ function FoodDialog({
       setVitamins(jsonToRows(food.vitaminJson));
       setMinerals(jsonToRows(food.mineralJson));
     } else {
-      form.reset({ name: "" });
+      form.reset({ name: "", serving_basis: "g" });
       setVitamins([]);
       setMinerals([]);
     }
@@ -148,6 +152,7 @@ function FoodDialog({
       name: values.name,
       brand: values.brand || null,
       default_serving_g: values.default_serving_g || null,
+      serving_basis: values.serving_basis ?? "g",
       kcal_per_100g: values.kcal_per_100g || "0",
       protein_g_per_100g: values.protein_g_per_100g || "0",
       fat_g_per_100g: values.fat_g_per_100g || "0",
@@ -186,25 +191,37 @@ function FoodDialog({
             <Label>Brand</Label>
             <Input {...form.register("brand")} />
           </div>
-          <div>
-            <Label>Default serving (g)</Label>
-            <Input type="number" step="0.01" {...form.register("default_serving_g")} />
+          <div className="grid grid-cols-[1fr_auto] gap-2 items-end">
+            <div>
+              <Label>Default serving ({basis})</Label>
+              <Input type="number" step="0.01" {...form.register("default_serving_g")} />
+            </div>
+            <div>
+              <Label>Basis</Label>
+              <select
+                className="h-9 rounded-md border bg-background px-2 text-sm"
+                {...form.register("serving_basis")}
+              >
+                <option value="g">g</option>
+                <option value="ml">ml</option>
+              </select>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <Label>kcal /100g</Label>
+              <Label>kcal /100{basis}</Label>
               <Input type="number" step="0.01" {...form.register("kcal_per_100g")} />
             </div>
             <div>
-              <Label>Protein g /100g</Label>
+              <Label>Protein g /100{basis}</Label>
               <Input type="number" step="0.01" {...form.register("protein_g_per_100g")} />
             </div>
             <div>
-              <Label>Fat g /100g</Label>
+              <Label>Fat g /100{basis}</Label>
               <Input type="number" step="0.01" {...form.register("fat_g_per_100g")} />
             </div>
             <div>
-              <Label>Carb g /100g</Label>
+              <Label>Carb g /100{basis}</Label>
               <Input type="number" step="0.01" {...form.register("carb_g_per_100g")} />
             </div>
           </div>
@@ -259,13 +276,14 @@ export default function FoodsPage() {
               <tr className="text-left">
                 <th className="px-3 py-2">Name</th>
                 <th className="px-3 py-2">Brand</th>
-                <th className="px-3 py-2 text-right">kcal/100g</th>
+                <th className="px-3 py-2 text-right">kcal/100</th>
                 <th className="px-3 py-2 text-right">P</th>
                 <th className="px-3 py-2 text-right">F</th>
                 <th className="px-3 py-2 text-right">C</th>
                 <th className="px-3 py-2 text-right">V</th>
                 <th className="px-3 py-2 text-right">M</th>
                 <th className="px-3 py-2 text-right">Serving</th>
+                <th className="px-3 py-2 text-right">Unit</th>
                 <th className="px-3 py-2 w-10"></th>
               </tr>
             </thead>
@@ -289,6 +307,7 @@ export default function FoodsPage() {
                     <td className="px-3 py-2 text-right text-muted-foreground">{vCount || "-"}</td>
                     <td className="px-3 py-2 text-right text-muted-foreground">{mCount || "-"}</td>
                     <td className="px-3 py-2 text-right">{f.defaultServingG ?? "-"}</td>
+                    <td className="px-3 py-2 text-right text-muted-foreground">{f.servingBasis ?? "g"}</td>
                     <td className="px-3 py-2 text-right">
                       <button
                         onClick={(e) => {

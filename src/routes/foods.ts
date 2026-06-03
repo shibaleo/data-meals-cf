@@ -14,6 +14,7 @@ const app = new Hono()
         name: food.name,
         brand: food.brand,
         defaultServingG: food.defaultServingG,
+        servingBasis: food.servingBasis,
         notes: food.notes,
         kcalPer100g: nutrient.kcalPer100g,
         proteinGPer100g: nutrient.proteinGPer100g,
@@ -36,6 +37,7 @@ const app = new Hono()
       brand: body.brand ?? null,
       sourceLabelUrl: body.source_label_url ?? null,
       defaultServingG: body.default_serving_g ?? null,
+      servingBasis: body.serving_basis ?? "g",
       notes: body.notes ?? null,
     }).returning();
     await db.insert(nutrient).values({
@@ -57,6 +59,7 @@ const app = new Hono()
     if (body.brand !== undefined) foodPatch.brand = body.brand;
     if (body.source_label_url !== undefined) foodPatch.sourceLabelUrl = body.source_label_url;
     if (body.default_serving_g !== undefined) foodPatch.defaultServingG = body.default_serving_g;
+    if (body.serving_basis !== undefined) foodPatch.servingBasis = body.serving_basis;
     if (body.notes !== undefined) foodPatch.notes = body.notes;
     await db.update(food).set(foodPatch).where(eq(food.id, id));
 
