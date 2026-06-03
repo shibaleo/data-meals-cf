@@ -401,14 +401,14 @@ export default function FoodsPage() {
               <tr className="text-left">
                 <th className="px-3 py-2">Name</th>
                 <th className="px-3 py-2">Brand</th>
-                <th className="px-3 py-2 text-right">kcal/100</th>
+                <th className="px-3 py-2 text-right">kcal</th>
                 <th className="px-3 py-2 text-right">P</th>
                 <th className="px-3 py-2 text-right">F</th>
                 <th className="px-3 py-2 text-right">C</th>
                 <th className="px-3 py-2 text-right">V</th>
                 <th className="px-3 py-2 text-right">M</th>
+                <th className="px-3 py-2 text-right">per</th>
                 <th className="px-3 py-2 text-right">Serving</th>
-                <th className="px-3 py-2 text-right">Unit</th>
                 <th className="px-3 py-2 w-10"></th>
               </tr>
             </thead>
@@ -416,6 +416,13 @@ export default function FoodsPage() {
               {foods.map((f) => {
                 const vCount = f.vitaminJson ? Object.keys(f.vitaminJson as Record<string, number>).length : 0;
                 const mCount = f.mineralJson ? Object.keys(f.mineralJson as Record<string, number>).length : 0;
+                const lb = Number(f.labelBasisAmount ?? 100) || 100;
+                const sb = f.servingBasis ?? "g";
+                const scale = (s: string | null | undefined) => {
+                  if (s === null || s === undefined || s === "") return "-";
+                  const n = Number(s);
+                  return Number.isFinite(n) ? fmt(n * lb / 100) : "-";
+                };
                 return (
                   <tr
                     key={f.id}
@@ -425,14 +432,14 @@ export default function FoodsPage() {
                   >
                     <td className="px-3 py-2">{f.name}</td>
                     <td className="px-3 py-2 text-muted-foreground">{f.brand ?? ""}</td>
-                    <td className="px-3 py-2 text-right">{f.kcalPer100g ?? "-"}</td>
-                    <td className="px-3 py-2 text-right">{f.proteinGPer100g ?? "-"}</td>
-                    <td className="px-3 py-2 text-right">{f.fatGPer100g ?? "-"}</td>
-                    <td className="px-3 py-2 text-right">{f.carbGPer100g ?? "-"}</td>
+                    <td className="px-3 py-2 text-right">{scale(f.kcalPer100g)}</td>
+                    <td className="px-3 py-2 text-right">{scale(f.proteinGPer100g)}</td>
+                    <td className="px-3 py-2 text-right">{scale(f.fatGPer100g)}</td>
+                    <td className="px-3 py-2 text-right">{scale(f.carbGPer100g)}</td>
                     <td className="px-3 py-2 text-right text-muted-foreground">{vCount || "-"}</td>
                     <td className="px-3 py-2 text-right text-muted-foreground">{mCount || "-"}</td>
-                    <td className="px-3 py-2 text-right">{f.defaultServingG ?? "-"}</td>
-                    <td className="px-3 py-2 text-right text-muted-foreground">{f.servingBasis ?? "g"}</td>
+                    <td className="px-3 py-2 text-right text-muted-foreground">{fmt(lb)}{sb}</td>
+                    <td className="px-3 py-2 text-right">{f.defaultServingG ?? "-"}{sb}</td>
                     <td className="px-3 py-2 text-right">
                       <button
                         onClick={(e) => {
