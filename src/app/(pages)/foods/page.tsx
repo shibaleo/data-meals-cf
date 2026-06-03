@@ -40,36 +40,44 @@ function MicroEditor({
   placeholder: string;
 }) {
   return (
-    <div className="space-y-1">
-      <Label>{label}</Label>
-      {rows.map((r, i) => (
-        <div key={i} className="flex gap-2 items-center">
-          <Input
-            className="flex-1" placeholder={placeholder}
-            value={r.key}
-            onChange={(e) => {
-              const v = e.target.value;
-              setRows(rows.map((p, j) => j === i ? { ...p, key: v } : p));
-            }}
-          />
-          <Input
-            type="number" step="0.01" className="w-24" placeholder="amount /100g"
-            value={r.value}
-            onChange={(e) => {
-              const v = e.target.value;
-              setRows(rows.map((p, j) => j === i ? { ...p, value: v } : p));
-            }}
-          />
-          <button type="button" onClick={() => setRows(rows.filter((_, j) => j !== i))}
-            className="text-muted-foreground hover:text-destructive">
-            <X className="size-4" />
-          </button>
+    <div className="space-y-2 rounded-md border border-border/60 bg-muted/20 p-3">
+      <div className="flex items-center justify-between">
+        <Label className="block">{label}</Label>
+        <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs"
+          onClick={() => setRows([...rows, { key: "", value: "" }])}>
+          <Plus className="size-3" /> Add
+        </Button>
+      </div>
+      {rows.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No entries. Add one above.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {rows.map((r, i) => (
+            <div key={i} className="flex gap-2 items-center">
+              <Input
+                className="flex-1 h-8" placeholder={placeholder}
+                value={r.key}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setRows(rows.map((p, j) => j === i ? { ...p, key: v } : p));
+                }}
+              />
+              <Input
+                type="number" step="0.01" className="w-24 h-8" placeholder="/100g"
+                value={r.value}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setRows(rows.map((p, j) => j === i ? { ...p, value: v } : p));
+                }}
+              />
+              <button type="button" onClick={() => setRows(rows.filter((_, j) => j !== i))}
+                className="text-muted-foreground hover:text-destructive shrink-0">
+                <X className="size-4" />
+              </button>
+            </div>
+          ))}
         </div>
-      ))}
-      <Button type="button" variant="outline" size="sm"
-        onClick={() => setRows([...rows, { key: "", value: "" }])}>
-        <Plus className="size-3" /> Add {label.toLowerCase()}
-      </Button>
+      )}
     </div>
   );
 }
