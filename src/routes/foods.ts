@@ -19,8 +19,8 @@ const app = new Hono()
         proteinGPer100g: nutrient.proteinGPer100g,
         fatGPer100g: nutrient.fatGPer100g,
         carbGPer100g: nutrient.carbGPer100g,
-        vitaminJson: nutrient.vitaminJson,
-        mineralJson: nutrient.mineralJson,
+        vitaminGPer100g: nutrient.vitaminGPer100g,
+        mineralGPer100g: nutrient.mineralGPer100g,
         createdAt: food.createdAt,
         updatedAt: food.updatedAt,
       })
@@ -44,8 +44,8 @@ const app = new Hono()
       proteinGPer100g: body.protein_g_per_100g ?? "0",
       fatGPer100g: body.fat_g_per_100g ?? "0",
       carbGPer100g: body.carb_g_per_100g ?? "0",
-      ...(body.vitamin_json !== undefined ? { vitaminJson: body.vitamin_json } : {}),
-      ...(body.mineral_json !== undefined ? { mineralJson: body.mineral_json } : {}),
+      vitaminGPer100g: body.vitamin_g_per_100g ?? "0",
+      mineralGPer100g: body.mineral_g_per_100g ?? "0",
     });
     return c.json({ data: created });
   })
@@ -65,8 +65,8 @@ const app = new Hono()
     if (body.protein_g_per_100g !== undefined) nutPatch.proteinGPer100g = body.protein_g_per_100g;
     if (body.fat_g_per_100g !== undefined) nutPatch.fatGPer100g = body.fat_g_per_100g;
     if (body.carb_g_per_100g !== undefined) nutPatch.carbGPer100g = body.carb_g_per_100g;
-    if (body.vitamin_json !== undefined) nutPatch.vitaminJson = body.vitamin_json;
-    if (body.mineral_json !== undefined) nutPatch.mineralJson = body.mineral_json;
+    if (body.vitamin_g_per_100g !== undefined) nutPatch.vitaminGPer100g = body.vitamin_g_per_100g;
+    if (body.mineral_g_per_100g !== undefined) nutPatch.mineralGPer100g = body.mineral_g_per_100g;
     if (Object.keys(nutPatch).length > 1) {
       await db.update(nutrient).set(nutPatch).where(eq(nutrient.foodId, id));
     }
