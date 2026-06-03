@@ -350,22 +350,12 @@ function FoodDialog({
             <Label>Brand</Label>
             <Input {...form.register("brand")} />
           </div>
-          <div>
-            <Label>Basis</Label>
-            <select
-              className="h-9 rounded-md border bg-background px-2 text-sm"
-              value={basis}
-              onChange={(e) => setBasis(e.target.value as ServingBasis)}
-            >
-              <option value="g">g</option>
-              <option value="ml">ml</option>
-            </select>
-          </div>
           <div className="rounded-md border border-border/60 bg-muted/20 p-3 space-y-1">
-            <Label className="block">Label basis (per X {basis})</Label>
+            <Label className="block">Label basis</Label>
             <div className="flex gap-2 items-center">
+              <span className="text-sm text-muted-foreground">per</span>
               <Input
-                type="number" step="0.01" className="w-28 h-8"
+                type="number" step="0.01" className="w-24 h-8"
                 value={labelBasis}
                 onChange={(e) => {
                   const n = Number(e.target.value);
@@ -373,9 +363,15 @@ function FoodDialog({
                   if (Number.isFinite(n) && n > 0) changeLabelBasis(n);
                 }}
               />
-              <span className="text-xs text-muted-foreground">
-                ラベルの「X {basis}あたり」の X を入れる。100 でラベルが per 100{basis}。値は連動換算。
-              </span>
+              <select
+                className="h-8 rounded-md border bg-background px-2 text-sm"
+                value={basis}
+                onChange={(e) => setBasis(e.target.value as ServingBasis)}
+              >
+                <option value="g">g</option>
+                <option value="ml">ml</option>
+              </select>
+              <span className="text-xs text-muted-foreground">あたり</span>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2">
