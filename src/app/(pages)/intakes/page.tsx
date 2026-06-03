@@ -1,16 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { usePageTitle } from "@/lib/page-context";
-import { useIntakes, useCreateIntake, useDeleteIntake } from "@/hooks/queries/use-intakes";
-import { useMeals } from "@/hooks/queries/use-meals";
+import {
+  useIntakes, useCreateIntake, useUpdateIntake, useDeleteIntake, type IntakeRow,
+} from "@/hooks/queries/use-intakes";
+import { useMeals, type MealRow } from "@/hooks/queries/use-meals";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 
 const MEAL_KINDS = ["breakfast", "lunch", "dinner", "snack"] as const;
@@ -18,22 +20,59 @@ type MealKind = (typeof MEAL_KINDS)[number];
 
 interface ItemDraft { meal_id: string; coef: string }
 
-function localDatetime(): string {
-  const d = new Date();
-  const tz = d.getTimezoneOffset() * 60000;
-  return new Date(d.getTime() - tz).toISOString().slice(0, 16);
+function localDatetime(d?: Date): string {
+  const date = d ?? new Date();
+  const tz = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - tz).toISOString().slice(0, 16);
 }
 
-export default function IntakesPage() {
-  usePageTitle("Intake");
-  const { data: intakes = [], isLoading } = useIntakes();
-  const { data: meals = [] } = useMeals();
+function IntakeDialog({
+  intake,
+  open,
+  onOpenChange,
+  meals,
+}: {
+  intake: IntakeRow | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  meals: MealRow[];
+}) {
+  const isEdit = intake !== null;
   const createIntake = useCreateIntake();
-  const deleteIntake = useDeleteIntake();
-  const [open, setOpen] = useState(false);
+  const updateIntake = useUpdateIntake();
   const [eatenAt, setEatenAt] = useState(localDatetime());
   const [kind, setKind] = useState<MealKind>("breakfast");
   const [items, setItems] = useState<ItemDraft[]>([]);
+  const [initial, setInitial] = useState<{ eatenAt: string; kind: string; items: string }>({
+    eatenAt: "", kind: "breakfast", items: "[]",
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    if (intake) {
+      const ea = localDatetime(new Date(intake.eatenAt));
+      const k = (intake.mealKind as MealKind) ?? "breakfast";
+      const its: ItemDraft[] = intake.items.map((it) => ({
+        meal_id: it.mealId,
+        coef: String(it.coef ?? "1"),
+      }));
+      setEatenAt(ea);
+      setKind(k);
+      setItems(its);
+      setInitial({ eatenAt: ea, kind: k, items: JSON.stringify(its) });
+    } else {
+      const ea = localDatetime();
+      setEatenAt(ea);
+      setKind("breakfast");
+      setItems([]);
+      setInitial({ eatenAt: ea, kind: "breakfast", items: "[]" });
+    }
+  }, [open, intake]);
+
+  const dirty =
+    eatenAt !== initial.eatenAt ||
+    kind !== initial.kind ||
+    JSON.stringify(items) !== initial.items;
 
   function addItem() {
     if (meals.length === 0) return;
@@ -42,117 +81,166 @@ export default function IntakesPage() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const payload = {
+      eaten_at: new Date(eatenAt).toISOString(),
+      meal_kind: kind,
+      items: items.map((it, i) => ({
+        meal_id: it.meal_id,
+        coef: it.coef,
+        sort_order: i,
+      })),
+    };
     try {
-      await createIntake.mutateAsync({
-        eaten_at: new Date(eatenAt).toISOString(),
-        meal_kind: kind,
-        items: items.map((it, i) => ({
-          meal_id: it.meal_id,
-          coef: it.coef,
-          sort_order: i,
-        })),
-      });
-      toast.success("Intake recorded");
-      setItems([]); setOpen(false);
+      if (isEdit && intake) {
+        await updateIntake.mutateAsync({ id: intake.id, body: payload });
+        toast.success("Intake updated");
+      } else {
+        await createIntake.mutateAsync(payload);
+        toast.success("Intake recorded");
+      }
+      onOpenChange(false);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed");
     }
   }
 
-  const mealName = (id: string) => meals.find((m) => m.id === id)?.name ?? id;
+  const pending = createIntake.isPending || updateIntake.isPending;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{isEdit ? "Edit intake" : "New intake"}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="space-y-3">
+          <div>
+            <Label>Eaten at</Label>
+            <Input type="datetime-local" value={eatenAt}
+              onChange={(e) => setEatenAt(e.target.value)} />
+          </div>
+          <div>
+            <Label>Kind</Label>
+            <select className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+              value={kind} onChange={(e) => setKind(e.target.value as MealKind)}>
+              {MEAL_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <Label>Meals (coef = portion eaten)</Label>
+            {items.map((it, i) => (
+              <div key={i} className="flex gap-2 items-center">
+                <select
+                  className="flex-1 rounded-md border bg-background px-2 py-1.5 text-sm"
+                  value={it.meal_id}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setItems((prev) => prev.map((p, j) => j === i ? { ...p, meal_id: v } : p));
+                  }}
+                >
+                  {meals.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+                <Input
+                  type="number" step="0.01" className="w-20"
+                  value={it.coef}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setItems((prev) => prev.map((p, j) => j === i ? { ...p, coef: v } : p));
+                  }}
+                />
+                <button type="button"
+                  onClick={() => setItems((prev) => prev.filter((_, j) => j !== i))}
+                  className="text-muted-foreground hover:text-destructive">
+                  <Trash2 className="size-4" />
+                </button>
+              </div>
+            ))}
+            <Button type="button" variant="outline" size="sm" onClick={addItem}>
+              <Plus className="size-3" /> Add meal
+            </Button>
+          </div>
+          <Button type="submit" disabled={pending || (isEdit && !dirty)}>
+            {isEdit ? "Update" : "Save"}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export default function IntakesPage() {
+  usePageTitle("Intake");
+  const { data: intakes = [], isLoading } = useIntakes();
+  const { data: meals = [] } = useMeals();
+  const deleteIntake = useDeleteIntake();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<IntakeRow | null>(null);
+
+  const mealById = new Map(meals.map((m) => [m.id, m]));
+
+  function summary(it: IntakeRow) {
+    if (it.items.length === 0) return <span className="text-muted-foreground">(empty)</span>;
+    return it.items.map((m, i) => {
+      const meal = mealById.get(m.mealId);
+      return (
+        <span key={m.id}>
+          {i > 0 && <span className="text-muted-foreground"> + </span>}
+          {meal?.name ?? "(unknown)"} × {m.coef}
+        </span>
+      );
+    });
+  }
 
   return (
     <div className="p-4 space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-medium md:hidden">Intake</h2>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm"><Plus className="size-4" /> New intake</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>New intake</DialogTitle></DialogHeader>
-            <form onSubmit={onSubmit} className="space-y-3">
-              <div>
-                <Label>Eaten at</Label>
-                <Input type="datetime-local" value={eatenAt}
-                  onChange={(e) => setEatenAt(e.target.value)} />
-              </div>
-              <div>
-                <Label>Kind</Label>
-                <select className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
-                  value={kind} onChange={(e) => setKind(e.target.value as MealKind)}>
-                  {MEAL_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
-                </select>
-              </div>
-              <div className="space-y-2">
-                <Label>Meals (coef = portion eaten)</Label>
-                {items.map((it, i) => (
-                  <div key={i} className="flex gap-2 items-center">
-                    <select
-                      className="flex-1 rounded-md border bg-background px-2 py-1.5 text-sm"
-                      value={it.meal_id}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setItems((prev) => prev.map((p, j) => j === i ? { ...p, meal_id: v } : p));
-                      }}
-                    >
-                      {meals.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                    </select>
-                    <Input
-                      type="number" step="0.01" className="w-20"
-                      value={it.coef}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setItems((prev) => prev.map((p, j) => j === i ? { ...p, coef: v } : p));
-                      }}
-                    />
-                    <button type="button"
-                      onClick={() => setItems((prev) => prev.filter((_, j) => j !== i))}
-                      className="text-muted-foreground hover:text-destructive">
-                      <Trash2 className="size-4" />
-                    </button>
-                  </div>
-                ))}
-                <Button type="button" variant="outline" size="sm" onClick={addItem}>
-                  <Plus className="size-3" /> Add meal
-                </Button>
-              </div>
-              <Button type="submit" disabled={createIntake.isPending}>Save</Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <Button size="sm" onClick={() => { setEditing(null); setDialogOpen(true); }}>
+          <Plus className="size-4" /> New intake
+        </Button>
       </div>
+
+      <IntakeDialog intake={editing} open={dialogOpen} onOpenChange={setDialogOpen} meals={meals} />
 
       {isLoading ? (
         <div className="text-sm text-muted-foreground">Loading...</div>
       ) : intakes.length === 0 ? (
         <div className="text-sm text-muted-foreground">No intakes yet.</div>
       ) : (
-        <div className="space-y-2">
-          {intakes.map((it) => (
-            <div key={it.id} className="rounded-md border p-3 flex items-start justify-between">
-              <div>
-                <div className="text-xs text-muted-foreground">
-                  {new Date(it.eatenAt).toLocaleString()} · {it.mealKind}
-                </div>
-                <div className="text-sm">
-                  {it.items.length === 0
-                    ? <span className="text-muted-foreground">(empty)</span>
-                    : it.items.map((m, i) => (
-                      <span key={m.id}>
-                        {i > 0 && <span className="text-muted-foreground"> + </span>}
-                        {mealName(m.mealId)} × {m.coef}
-                      </span>
-                    ))}
-                </div>
-              </div>
-              <button
-                onClick={() => { if (confirm("Delete intake?")) deleteIntake.mutate(it.id); }}
-                className="text-muted-foreground hover:text-destructive">
-                <Trash2 className="size-4" />
-              </button>
-            </div>
-          ))}
+        <div className="overflow-x-auto rounded-md border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50">
+              <tr className="text-left">
+                <th className="px-3 py-2">Eaten at</th>
+                <th className="px-3 py-2">Kind</th>
+                <th className="px-3 py-2">Composition</th>
+                <th className="px-3 py-2 text-right">Items</th>
+                <th className="px-3 py-2 w-10"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {intakes.map((it) => (
+                <tr key={it.id}
+                  className="border-t cursor-pointer hover:bg-muted/30"
+                  onDoubleClick={() => { setEditing(it); setDialogOpen(true); }}
+                  title="Double-click to edit">
+                  <td className="px-3 py-2">{new Date(it.eatenAt).toLocaleString()}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{it.mealKind}</td>
+                  <td className="px-3 py-2">{summary(it)}</td>
+                  <td className="px-3 py-2 text-right text-muted-foreground">{it.items.length}</td>
+                  <td className="px-3 py-2 text-right">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm("Delete intake?")) deleteIntake.mutate(it.id);
+                      }}
+                      className="text-muted-foreground hover:text-destructive">
+                      <Trash2 className="size-4" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
