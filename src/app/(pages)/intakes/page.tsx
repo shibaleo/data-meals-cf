@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { FileText, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { usePageTitle } from "@/lib/page-context";
 import {
@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { MarkdownEditor } from "@/components/markdown-editor";
 
 const MEAL_KINDS = ["breakfast", "lunch", "dinner", "snack"] as const;
 type MealKind = (typeof MEAL_KINDS)[number];
@@ -42,9 +43,10 @@ function IntakeDialog({
   const updateIntake = useUpdateIntake();
   const [eatenAt, setEatenAt] = useState(localDatetime());
   const [kind, setKind] = useState<MealKind>("breakfast");
+  const [notes, setNotes] = useState("");
   const [items, setItems] = useState<ItemDraft[]>([]);
-  const [initial, setInitial] = useState<{ eatenAt: string; kind: string; items: string }>({
-    eatenAt: "", kind: "breakfast", items: "[]",
+  const [initial, setInitial] = useState<{ eatenAt: string; kind: string; notes: string; items: string }>({
+    eatenAt: "", kind: "breakfast", notes: "", items: "[]",
   });
 
   useEffect(() => {
@@ -56,22 +58,26 @@ function IntakeDialog({
         meal_id: it.mealId,
         coef: String(it.coef ?? "1"),
       }));
+      const n = intake.notes ?? "";
       setEatenAt(ea);
       setKind(k);
+      setNotes(n);
       setItems(its);
-      setInitial({ eatenAt: ea, kind: k, items: JSON.stringify(its) });
+      setInitial({ eatenAt: ea, kind: k, notes: n, items: JSON.stringify(its) });
     } else {
       const ea = localDatetime();
       setEatenAt(ea);
       setKind("breakfast");
+      setNotes("");
       setItems([]);
-      setInitial({ eatenAt: ea, kind: "breakfast", items: "[]" });
+      setInitial({ eatenAt: ea, kind: "breakfast", notes: "", items: "[]" });
     }
   }, [open, intake]);
 
   const dirty =
     eatenAt !== initial.eatenAt ||
     kind !== initial.kind ||
+    notes !== initial.notes ||
     JSON.stringify(items) !== initial.items;
 
   function addItem() {
@@ -84,6 +90,7 @@ function IntakeDialog({
     const payload = {
       eaten_at: new Date(eatenAt).toISOString(),
       meal_kind: kind,
+      notes: notes.trim() || null,
       items: items.map((it, i) => ({
         meal_id: it.meal_id,
         coef: it.coef,
@@ -158,6 +165,15 @@ function IntakeDialog({
               <Plus className="size-3" /> Add meal
             </Button>
           </div>
+          <div className="space-y-1">
+            <Label>Notes (Markdown)</Label>
+            <MarkdownEditor
+              defaultValue={notes}
+              onChange={setNotes}
+              compact
+              placeholder="気分 / 体調 / コンディション など"
+            />
+          </div>
           <Button type="submit" disabled={pending || (isEdit && !dirty)}>
             {isEdit ? "Update" : "Save"}
           </Button>
@@ -223,7 +239,12 @@ export default function IntakesPage() {
                   className="border-t cursor-pointer hover:bg-muted/30"
                   onDoubleClick={() => { setEditing(it); setDialogOpen(true); }}
                   title="Double-click to edit">
-                  <td className="px-3 py-2">{new Date(it.eatenAt).toLocaleString()}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-1.5">
+                      <span>{new Date(it.eatenAt).toLocaleString()}</span>
+                      {it.notes && <FileText className="size-3 text-muted-foreground" aria-label="has notes" />}
+                    </div>
+                  </td>
                   <td className="px-3 py-2 text-muted-foreground">{it.mealKind}</td>
                   <td className="px-3 py-2">{summary(it)}</td>
                   <td className="px-3 py-2 text-right text-muted-foreground">{it.items.length}</td>

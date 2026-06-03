@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { FileText, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { usePageTitle } from "@/lib/page-context";
 import {
@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { MarkdownEditor } from "@/components/markdown-editor";
 
 interface ItemDraft { food_id: string; coef: string }
 
@@ -37,8 +38,11 @@ function MealDialog({
   const createMeal = useCreateMeal();
   const updateMeal = useUpdateMeal();
   const [name, setName] = useState("");
+  const [notes, setNotes] = useState("");
   const [items, setItems] = useState<ItemDraft[]>([]);
-  const [initial, setInitial] = useState<{ name: string; items: string }>({ name: "", items: "[]" });
+  const [initial, setInitial] = useState<{ name: string; notes: string; items: string }>(
+    { name: "", notes: "", items: "[]" },
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -47,17 +51,23 @@ function MealDialog({
         food_id: it.foodId,
         coef: String(it.coef ?? "1"),
       }));
+      const n = meal.notes ?? "";
       setName(meal.name);
+      setNotes(n);
       setItems(its);
-      setInitial({ name: meal.name, items: JSON.stringify(its) });
+      setInitial({ name: meal.name, notes: n, items: JSON.stringify(its) });
     } else {
       setName("");
+      setNotes("");
       setItems([]);
-      setInitial({ name: "", items: "[]" });
+      setInitial({ name: "", notes: "", items: "[]" });
     }
   }, [open, meal]);
 
-  const dirty = name !== initial.name || JSON.stringify(items) !== initial.items;
+  const dirty =
+    name !== initial.name ||
+    notes !== initial.notes ||
+    JSON.stringify(items) !== initial.items;
 
   function addItem() {
     if (foods.length === 0) return;
@@ -72,6 +82,7 @@ function MealDialog({
     }
     const payload = {
       name: name.trim(),
+      notes: notes.trim() || null,
       items: items.map((it, i) => ({
         food_id: it.food_id,
         coef: it.coef,
@@ -142,6 +153,15 @@ function MealDialog({
               <Plus className="size-3" /> Add food
             </Button>
           </div>
+          <div className="space-y-1">
+            <Label>Notes (Markdown)</Label>
+            <MarkdownEditor
+              defaultValue={notes}
+              onChange={setNotes}
+              compact
+              placeholder="作り方 / 想定タイミング / 代替案 など"
+            />
+          </div>
           <Button type="submit" disabled={pending || (isEdit && !dirty)}>
             {isEdit ? "Update" : "Save"}
           </Button>
@@ -206,7 +226,12 @@ export default function MealsPage() {
                   className="border-t cursor-pointer hover:bg-muted/30"
                   onDoubleClick={() => { setEditing(m); setDialogOpen(true); }}
                   title="Double-click to edit">
-                  <td className="px-3 py-2 font-medium">{m.name}</td>
+                  <td className="px-3 py-2 font-medium">
+                    <div className="flex items-center gap-1.5">
+                      <span>{m.name}</span>
+                      {m.notes && <FileText className="size-3 text-muted-foreground" aria-label="has notes" />}
+                    </div>
+                  </td>
                   <td className="px-3 py-2">{summary(m)}</td>
                   <td className="px-3 py-2 text-right text-muted-foreground">{m.items.length}</td>
                   <td className="px-3 py-2 text-right">

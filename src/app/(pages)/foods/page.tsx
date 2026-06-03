@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Plus, Trash2, X } from "lucide-react";
+import { ExternalLink, FileText, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { usePageTitle } from "@/lib/page-context";
@@ -16,10 +16,12 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { MarkdownEditor } from "@/components/markdown-editor";
 
 const formSchema = z.object({
   name: z.string().min(1),
   brand: z.string().optional(),
+  source_label_url: z.string().optional(),
   kcal_per_100g: z.string().optional(),
   protein_g_per_100g: z.string().optional(),
   fat_g_per_100g: z.string().optional(),
@@ -164,6 +166,7 @@ function FoodDialog({
   const updateFood = useUpdateFood();
   const [vitamins, setVitamins] = useState<MicroRow[]>([]);
   const [minerals, setMinerals] = useState<MicroRow[]>([]);
+  const [notes, setNotes] = useState<string>("");
   const [basis, setBasis] = useState<ServingBasis>("g");
   // labelBasis = how many basis-units the user's typed values are per (e.g.
   // 28 if the label is "per 1食(28g)"). Stored values are per 100; the form
@@ -173,6 +176,7 @@ function FoodDialog({
 
   const [initialBasis, setInitialBasis] = useState<ServingBasis>("g");
   const [initialMicros, setInitialMicros] = useState<{ v: string; m: string }>({ v: "{}", m: "{}" });
+  const [initialNotes, setInitialNotes] = useState<string>("");
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -194,6 +198,7 @@ function FoodDialog({
       form.reset({
         name: food.name,
         brand: food.brand ?? "",
+        source_label_url: food.sourceLabelUrl ?? "",
         kcal_per_100g: scale(food.kcalPer100g),
         protein_g_per_100g: scale(food.proteinGPer100g),
         fat_g_per_100g: scale(food.fatGPer100g),
@@ -217,8 +222,11 @@ function FoodDialog({
       });
       setLabelBasis(lb);
       prevLabelBasis.current = lb;
+      const fn = food.notes ?? "";
+      setNotes(fn);
+      setInitialNotes(fn);
     } else {
-      form.reset({ name: "" });
+      form.reset({ name: "", source_label_url: "" });
       setBasis("g");
       setVitamins([]);
       setMinerals([]);
@@ -226,6 +234,8 @@ function FoodDialog({
       setInitialMicros({ v: "{}", m: "{}" });
       setLabelBasis(100);
       prevLabelBasis.current = 100;
+      setNotes("");
+      setInitialNotes("");
     }
   }, [open, food, form]);
 
@@ -260,7 +270,8 @@ function FoodDialog({
     JSON.stringify(rowsToJson(vitamins) ?? {}) !== initialMicros.v ||
     JSON.stringify(rowsToJson(minerals) ?? {}) !== initialMicros.m;
   const basisDirty = basis !== initialBasis;
-  const dirty = form.formState.isDirty || microsDirty || basisDirty;
+  const notesDirty = notes !== initialNotes;
+  const dirty = form.formState.isDirty || microsDirty || basisDirty || notesDirty;
 
   async function onSubmit(values: FormValues) {
     // Convert per-labelBasis -> per-100 for storage. ratio = 100 / labelBasis.
@@ -279,9 +290,31 @@ function FoodDialog({
       }
       return Object.keys(out).length > 0 ? out : undefined;
     };
+    // Warn (don't block) on vitamin/mineral keys not in the autocomplete set —
+    // protects against typo-style drift like salt_g vs salt_equivalent_g.
+    const unknownKeys: string[] = [];
+    const knownVitamins = new Set([...VITAMIN_SEEDS, ...collectKeys(allFoods, "vitaminJson")]);
+    const knownMinerals = new Set([...MINERAL_SEEDS, ...collectKeys(allFoods, "mineralJson")]);
+    for (const r of vitamins) {
+      const k = r.key.trim();
+      if (k && !knownVitamins.has(k)) unknownKeys.push(`vitamin: ${k}`);
+    }
+    for (const r of minerals) {
+      const k = r.key.trim();
+      if (k && !knownMinerals.has(k)) unknownKeys.push(`mineral: ${k}`);
+    }
+    if (unknownKeys.length > 0) {
+      const ok = confirm(
+        `未登録の栄養素 key を使っています:\n\n${unknownKeys.join("\n")}\n\n新規 key として保存しますか?`,
+      );
+      if (!ok) return;
+    }
+
     const payload = {
       name: values.name,
       brand: values.brand || null,
+      source_label_url: values.source_label_url?.trim() || null,
+      notes: notes.trim() || null,
       serving_basis: basis,
       label_basis_amount: String(labelBasis),
       kcal_per_100g: toPer100(values.kcal_per_100g),
@@ -308,6 +341,20 @@ function FoodDialog({
   const pending = createFood.isPending || updateFood.isPending;
   const unit = `${labelBasis}${basis}`;
   const microSuffix = `/${unit}`;
+
+  // kcal sanity check: typed kcal vs Atwater 4P + 9F + 4C
+  const kcalSanity = useMemo(() => {
+    const kc = Number(form.watch("kcal_per_100g"));
+    const p = Number(form.watch("protein_g_per_100g")) || 0;
+    const f = Number(form.watch("fat_g_per_100g")) || 0;
+    const c = Number(form.watch("carb_g_per_100g")) || 0;
+    if (!Number.isFinite(kc) || (p === 0 && f === 0 && c === 0)) return null;
+    const computed = 4 * p + 9 * f + 4 * c;
+    if (computed === 0) return null;
+    const diff = Math.abs(kc - computed);
+    const pct = (diff / Math.max(kc, computed)) * 100;
+    return { computed, diff, pct };
+  }, [form]);
 
   // Suggestions = union(seeded, every key ever used across foods).
   const vitaminSuggestions = Array.from(new Set([
@@ -349,6 +396,10 @@ function FoodDialog({
           <div>
             <Label>Brand</Label>
             <Input {...form.register("brand")} />
+          </div>
+          <div>
+            <Label>Source label URL</Label>
+            <Input type="url" placeholder="https://..." {...form.register("source_label_url")} />
           </div>
           <div className="rounded-md border border-border/60 bg-muted/20 p-3 space-y-1">
             <Label className="block">Label basis</Label>
@@ -392,12 +443,28 @@ function FoodDialog({
               <Input type="number" step="0.01" {...form.register("carb_g_per_100g")} />
             </div>
           </div>
+          {kcalSanity && (
+            <p className={`text-xs ${kcalSanity.pct > 15 ? "text-amber-500" : "text-muted-foreground"}`}>
+              Atwater 計算 kcal: <strong>{kcalSanity.computed.toFixed(1)}</strong>
+              {" "}(差 {kcalSanity.diff.toFixed(1)}, {kcalSanity.pct.toFixed(0)}%)
+              {kcalSanity.pct > 15 && " — 入力値とのズレが大きい。確認推奨"}
+            </p>
+          )}
           <MicroEditor label="Vitamins" rows={vitamins} setRows={setVitamins}
             placeholder="e.g. vitamin_c_mg" unitSuffix={microSuffix}
             suggestions={vitaminSuggestions} datalistId="vitamin-keys" />
           <MicroEditor label="Minerals" rows={minerals} setRows={setMinerals}
             placeholder="e.g. iron_mg" unitSuffix={microSuffix}
             suggestions={mineralSuggestions} datalistId="mineral-keys" />
+          <div className="space-y-1">
+            <Label>Notes (Markdown)</Label>
+            <MarkdownEditor
+              defaultValue={notes}
+              onChange={setNotes}
+              compact
+              placeholder="気づき / メーカー備考 / 入手元 など"
+            />
+          </div>
           <Button type="submit" disabled={pending || (isEdit && !dirty)}>
             {isEdit ? "Update" : "Save"}
           </Button>
@@ -473,7 +540,22 @@ export default function FoodsPage() {
                     onDoubleClick={() => openEdit(f)}
                     title="Double-click to edit"
                   >
-                    <td className="px-3 py-2">{f.name}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-1.5">
+                        <span>{f.name}</span>
+                        {f.sourceLabelUrl && (
+                          <a href={f.sourceLabelUrl} target="_blank" rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-muted-foreground hover:text-foreground"
+                            title={f.sourceLabelUrl}>
+                            <ExternalLink className="size-3" />
+                          </a>
+                        )}
+                        {f.notes && (
+                          <FileText className="size-3 text-muted-foreground" aria-label="has notes" />
+                        )}
+                      </div>
+                    </td>
                     <td className="px-3 py-2 text-muted-foreground">{f.brand ?? ""}</td>
                     <td className="px-3 py-2 text-right">{scale(f.kcalPer100g)}</td>
                     <td className="px-3 py-2 text-right">{scale(f.proteinGPer100g)}</td>

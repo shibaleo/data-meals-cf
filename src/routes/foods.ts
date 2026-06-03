@@ -12,6 +12,7 @@ const rowSelect = {
   brand: food.brand,
   servingBasis: food.servingBasis,
   labelBasisAmount: food.labelBasisAmount,
+  sourceLabelUrl: food.sourceLabelUrl,
   notes: food.notes,
   kcalPer100g: nutrient.kcalPer100g,
   proteinGPer100g: nutrient.proteinGPer100g,
