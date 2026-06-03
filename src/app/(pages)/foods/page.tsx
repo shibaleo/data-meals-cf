@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Trash2, X } from "lucide-react";
@@ -30,6 +30,9 @@ type FormValues = z.infer<typeof formSchema>;
 
 type ServingBasis = "g" | "ml";
 
+const PFC_FIELDS = ["kcal_per_100g", "protein_g_per_100g", "fat_g_per_100g", "carb_g_per_100g"] as const;
+type PFCField = (typeof PFC_FIELDS)[number];
+
 interface MicroRow { key: string; value: string }
 
 function jsonToRows(j: unknown): MicroRow[] {
@@ -49,16 +52,26 @@ function rowsToJson(rows: MicroRow[]): Record<string, number> | undefined {
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
+// Format a number for an Input value: trim trailing zeros so 367.86 stays as
+// "367.86" but 100 doesn't show as "100.00000001" after a roundtrip.
+function fmt(n: number): string {
+  if (!Number.isFinite(n)) return "";
+  const s = n.toFixed(4);
+  return s.replace(/\.?0+$/, "");
+}
+
 function MicroEditor({
   label,
   rows,
   setRows,
   placeholder,
+  unitSuffix,
 }: {
   label: string;
   rows: MicroRow[];
   setRows: (r: MicroRow[]) => void;
   placeholder: string;
+  unitSuffix: string;
 }) {
   return (
     <div className="space-y-2 rounded-md border border-border/60 bg-muted/20 p-3">
@@ -84,7 +97,7 @@ function MicroEditor({
                 }}
               />
               <Input
-                type="number" step="0.01" className="w-24 h-8" placeholder="/100g"
+                type="number" step="0.01" className="w-24 h-8" placeholder={unitSuffix}
                 value={r.value}
                 onChange={(e) => {
                   const v = e.target.value;
@@ -118,7 +131,12 @@ function FoodDialog({
   const [vitamins, setVitamins] = useState<MicroRow[]>([]);
   const [minerals, setMinerals] = useState<MicroRow[]>([]);
   const [basis, setBasis] = useState<ServingBasis>("g");
-  // Snapshot of the non-RHF fields at dialog-open time, so we can compute dirty.
+  // labelBasis = how many basis-units the user's typed values are per (e.g.
+  // 28 if the label is "per 1食(28g)"). Stored values are per 100; the form
+  // displays per labelBasis. Default 100 = enter values exactly as per-100g.
+  const [labelBasis, setLabelBasis] = useState<number>(100);
+  const prevLabelBasis = useRef<number>(100);
+
   const [initialBasis, setInitialBasis] = useState<ServingBasis>("g");
   const [initialMicros, setInitialMicros] = useState<{ v: string; m: string }>({ v: "{}", m: "{}" });
 
@@ -127,7 +145,6 @@ function FoodDialog({
     defaultValues: { name: "" },
   });
 
-  // Sync form + micros each time dialog opens with a different target
   useEffect(() => {
     if (!open) return;
     if (food) {
@@ -151,6 +168,9 @@ function FoodDialog({
         v: JSON.stringify(rowsToJson(v) ?? {}),
         m: JSON.stringify(rowsToJson(m) ?? {}),
       });
+      // Stored values are per 100, so default the label basis back to 100.
+      setLabelBasis(100);
+      prevLabelBasis.current = 100;
     } else {
       form.reset({ name: "" });
       setBasis("g");
@@ -158,28 +178,72 @@ function FoodDialog({
       setMinerals([]);
       setInitialBasis("g");
       setInitialMicros({ v: "{}", m: "{}" });
+      setLabelBasis(100);
+      prevLabelBasis.current = 100;
     }
   }, [open, food, form]);
+
+  // Rescale all PFC + V/M values when the user changes labelBasis so that the
+  // displayed numbers stay self-consistent (= "per <new labelBasis>" units).
+  function changeLabelBasis(next: number) {
+    const prev = prevLabelBasis.current;
+    if (!Number.isFinite(next) || next <= 0 || prev <= 0 || next === prev) {
+      setLabelBasis(Number.isFinite(next) && next > 0 ? next : prev);
+      return;
+    }
+    const ratio = next / prev;
+    for (const f of PFC_FIELDS) {
+      const raw = form.getValues(f);
+      const n = raw === "" || raw === undefined ? NaN : Number(raw);
+      if (Number.isFinite(n)) {
+        form.setValue(f, fmt(n * ratio), { shouldDirty: true });
+      }
+    }
+    const scaleRows = (rows: MicroRow[]) =>
+      rows.map((r) => {
+        const n = Number(r.value);
+        return Number.isFinite(n) && r.value !== "" ? { ...r, value: fmt(n * ratio) } : r;
+      });
+    setVitamins((rs) => scaleRows(rs));
+    setMinerals((rs) => scaleRows(rs));
+    setLabelBasis(next);
+    prevLabelBasis.current = next;
+  }
 
   const microsDirty =
     JSON.stringify(rowsToJson(vitamins) ?? {}) !== initialMicros.v ||
     JSON.stringify(rowsToJson(minerals) ?? {}) !== initialMicros.m;
   const basisDirty = basis !== initialBasis;
-  // form.formState.isDirty reflects PFC + name/brand/serving fields.
   const dirty = form.formState.isDirty || microsDirty || basisDirty;
 
   async function onSubmit(values: FormValues) {
+    // Convert per-labelBasis -> per-100 for storage. ratio = 100 / labelBasis.
+    const toPer100 = (s: string | undefined): string => {
+      const n = s === "" || s === undefined ? NaN : Number(s);
+      if (!Number.isFinite(n)) return "0";
+      return fmt(n * (100 / labelBasis));
+    };
+    const scaledMicros = (rows: MicroRow[]): Record<string, number> | undefined => {
+      const out: Record<string, number> = {};
+      for (const r of rows) {
+        const k = r.key.trim();
+        if (!k) continue;
+        const n = Number(r.value);
+        if (Number.isFinite(n)) out[k] = Number(fmt(n * (100 / labelBasis)));
+      }
+      return Object.keys(out).length > 0 ? out : undefined;
+    };
     const payload = {
       name: values.name,
       brand: values.brand || null,
       default_serving_g: values.default_serving_g || null,
       serving_basis: basis,
-      kcal_per_100g: values.kcal_per_100g || "0",
-      protein_g_per_100g: values.protein_g_per_100g || "0",
-      fat_g_per_100g: values.fat_g_per_100g || "0",
-      carb_g_per_100g: values.carb_g_per_100g || "0",
-      vitamin_json: rowsToJson(vitamins),
-      mineral_json: rowsToJson(minerals),
+      kcal_per_100g: toPer100(values.kcal_per_100g),
+      protein_g_per_100g: toPer100(values.protein_g_per_100g),
+      fat_g_per_100g: toPer100(values.fat_g_per_100g),
+      carb_g_per_100g: toPer100(values.carb_g_per_100g),
+      vitamin_json: scaledMicros(vitamins),
+      mineral_json: scaledMicros(minerals),
     };
     try {
       if (isEdit && food) {
@@ -196,6 +260,8 @@ function FoodDialog({
   }
 
   const pending = createFood.isPending || updateFood.isPending;
+  const unit = `${labelBasis}${basis}`;
+  const microSuffix = `/${unit}`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -235,28 +301,45 @@ function FoodDialog({
               </select>
             </div>
           </div>
+          <div className="rounded-md border border-border/60 bg-muted/20 p-3 space-y-1">
+            <Label className="block">Label basis (per X {basis})</Label>
+            <div className="flex gap-2 items-center">
+              <Input
+                type="number" step="0.01" className="w-28 h-8"
+                value={labelBasis}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  if (e.target.value === "") return;
+                  if (Number.isFinite(n) && n > 0) changeLabelBasis(n);
+                }}
+              />
+              <span className="text-xs text-muted-foreground">
+                ラベルの「X {basis}あたり」の X を入れる。100 でラベルが per 100{basis}。値は連動換算。
+              </span>
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <Label>kcal /100{basis}</Label>
+              <Label>kcal /{unit}</Label>
               <Input type="number" step="0.01" {...form.register("kcal_per_100g")} />
             </div>
             <div>
-              <Label>Protein g /100{basis}</Label>
+              <Label>Protein g /{unit}</Label>
               <Input type="number" step="0.01" {...form.register("protein_g_per_100g")} />
             </div>
             <div>
-              <Label>Fat g /100{basis}</Label>
+              <Label>Fat g /{unit}</Label>
               <Input type="number" step="0.01" {...form.register("fat_g_per_100g")} />
             </div>
             <div>
-              <Label>Carb g /100{basis}</Label>
+              <Label>Carb g /{unit}</Label>
               <Input type="number" step="0.01" {...form.register("carb_g_per_100g")} />
             </div>
           </div>
           <MicroEditor label="Vitamins" rows={vitamins} setRows={setVitamins}
-            placeholder="e.g. vitamin_c_mg" />
+            placeholder="e.g. vitamin_c_mg" unitSuffix={microSuffix} />
           <MicroEditor label="Minerals" rows={minerals} setRows={setMinerals}
-            placeholder="e.g. iron_mg" />
+            placeholder="e.g. iron_mg" unitSuffix={microSuffix} />
           <Button type="submit" disabled={pending || (isEdit && !dirty)}>
             {isEdit ? "Update" : "Save"}
           </Button>
