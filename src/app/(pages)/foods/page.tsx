@@ -148,18 +148,32 @@ function FoodDialog({
   useEffect(() => {
     if (!open) return;
     if (food) {
+      // Stored values are per 100; redisplay them per the food's saved
+      // labelBasisAmount so the inputs match what the user originally typed.
+      const lb = Number(food.labelBasisAmount ?? 100) || 100;
+      const ratio = lb / 100;
+      const scale = (s: string | null | undefined) => {
+        if (s === null || s === undefined || s === "") return "";
+        const n = Number(s);
+        return Number.isFinite(n) ? fmt(n * ratio) : "";
+      };
       form.reset({
         name: food.name,
         brand: food.brand ?? "",
         default_serving_g: food.defaultServingG ?? "",
-        kcal_per_100g: food.kcalPer100g ?? "",
-        protein_g_per_100g: food.proteinGPer100g ?? "",
-        fat_g_per_100g: food.fatGPer100g ?? "",
-        carb_g_per_100g: food.carbGPer100g ?? "",
+        kcal_per_100g: scale(food.kcalPer100g),
+        protein_g_per_100g: scale(food.proteinGPer100g),
+        fat_g_per_100g: scale(food.fatGPer100g),
+        carb_g_per_100g: scale(food.carbGPer100g),
       });
       const b = (food.servingBasis as ServingBasis) ?? "g";
-      const v = jsonToRows(food.vitaminJson);
-      const m = jsonToRows(food.mineralJson);
+      const scaleRows = (rows: MicroRow[]) =>
+        rows.map((r) => {
+          const n = Number(r.value);
+          return Number.isFinite(n) && r.value !== "" ? { ...r, value: fmt(n * ratio) } : r;
+        });
+      const v = scaleRows(jsonToRows(food.vitaminJson));
+      const m = scaleRows(jsonToRows(food.mineralJson));
       setBasis(b);
       setVitamins(v);
       setMinerals(m);
@@ -168,9 +182,8 @@ function FoodDialog({
         v: JSON.stringify(rowsToJson(v) ?? {}),
         m: JSON.stringify(rowsToJson(m) ?? {}),
       });
-      // Stored values are per 100, so default the label basis back to 100.
-      setLabelBasis(100);
-      prevLabelBasis.current = 100;
+      setLabelBasis(lb);
+      prevLabelBasis.current = lb;
     } else {
       form.reset({ name: "" });
       setBasis("g");
@@ -238,6 +251,7 @@ function FoodDialog({
       brand: values.brand || null,
       default_serving_g: values.default_serving_g || null,
       serving_basis: basis,
+      label_basis_amount: String(labelBasis),
       kcal_per_100g: toPer100(values.kcal_per_100g),
       protein_g_per_100g: toPer100(values.protein_g_per_100g),
       fat_g_per_100g: toPer100(values.fat_g_per_100g),

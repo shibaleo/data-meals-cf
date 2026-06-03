@@ -28,11 +28,13 @@ export const food = pgTable("food", {
   sourceLabelUrl: text("source_label_url"),
   defaultServingG: numeric("default_serving_g", { precision: 7, scale: 2 }),
   servingBasis: text("serving_basis").notNull().default("g"),
+  labelBasisAmount: numeric("label_basis_amount", { precision: 7, scale: 2 }).notNull().default("100"),
   notes: text("notes"),
   ...timestamps(),
 }, (t) => [
   index("food_name_idx").on(t.name),
   check("food_serving_basis_check", sql`${t.servingBasis} IN ('g','ml')`),
+  check("food_label_basis_check", sql`${t.labelBasisAmount} > 0`),
 ]);
 
 export const nutrient = pgTable("nutrient", {

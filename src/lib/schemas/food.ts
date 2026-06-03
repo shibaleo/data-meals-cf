@@ -8,6 +8,7 @@ export const foodCreateSchema = z.object({
   source_label_url: z.string().url().nullable().optional(),
   default_serving_g: numericString.nullable().optional(),
   serving_basis: z.enum(["g", "ml"]).optional(),
+  label_basis_amount: numericString.optional(),
   notes: z.string().nullable().optional(),
   // nutrient (1:1, optional — defaults to 0 in DB)
   kcal_per_100g: numericString.optional(),

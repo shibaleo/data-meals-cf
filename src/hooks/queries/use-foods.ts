@@ -18,6 +18,7 @@ function bodyToRowPatch(body: Partial<FoodBody>): Partial<FoodRow> {
   if (body.brand !== undefined) out.brand = body.brand;
   if (body.default_serving_g !== undefined) out.defaultServingG = body.default_serving_g;
   if (body.serving_basis !== undefined) out.servingBasis = body.serving_basis;
+  if (body.label_basis_amount !== undefined) out.labelBasisAmount = body.label_basis_amount;
   if (body.kcal_per_100g !== undefined) out.kcalPer100g = body.kcal_per_100g;
   if (body.protein_g_per_100g !== undefined) out.proteinGPer100g = body.protein_g_per_100g;
   if (body.fat_g_per_100g !== undefined) out.fatGPer100g = body.fat_g_per_100g;
@@ -44,6 +45,7 @@ function upsertRow(
         brand: null,
         defaultServingG: null,
         servingBasis: "g",
+        labelBasisAmount: "100",
         notes: null,
         kcalPer100g: "0",
         proteinGPer100g: "0",

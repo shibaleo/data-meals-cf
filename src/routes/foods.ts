@@ -12,6 +12,7 @@ const rowSelect = {
   brand: food.brand,
   defaultServingG: food.defaultServingG,
   servingBasis: food.servingBasis,
+  labelBasisAmount: food.labelBasisAmount,
   notes: food.notes,
   kcalPer100g: nutrient.kcalPer100g,
   proteinGPer100g: nutrient.proteinGPer100g,
@@ -50,6 +51,7 @@ const app = new Hono()
       sourceLabelUrl: body.source_label_url ?? null,
       defaultServingG: body.default_serving_g ?? null,
       servingBasis: body.serving_basis ?? "g",
+      labelBasisAmount: body.label_basis_amount ?? "100",
       notes: body.notes ?? null,
     }).returning();
     await db.insert(nutrient).values({
@@ -73,6 +75,7 @@ const app = new Hono()
     if (body.source_label_url !== undefined) foodPatch.sourceLabelUrl = body.source_label_url;
     if (body.default_serving_g !== undefined) foodPatch.defaultServingG = body.default_serving_g;
     if (body.serving_basis !== undefined) foodPatch.servingBasis = body.serving_basis;
+    if (body.label_basis_amount !== undefined) foodPatch.labelBasisAmount = body.label_basis_amount;
     if (body.notes !== undefined) foodPatch.notes = body.notes;
     await db.update(food).set(foodPatch).where(eq(food.id, id));
 
