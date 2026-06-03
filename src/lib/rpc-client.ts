@@ -13,7 +13,23 @@ import { ApiError } from "@/lib/api-client";
  * `import type { AppType }` keeps server-only deps (Drizzle, postgres, etc.)
  * out of the client bundle.
  */
-export const rpc = hc<AppType>("");
+// Custom fetch: inject Clerk session JWT as Bearer.
+// Clerk JS exposes `window.Clerk.session?.getToken()` once the SDK loads.
+// We attach the token per request so cookies aren't required (works in dev
+// instances where Clerk uses `__clerk_db_jwt` instead of `__session`).
+const authFetch: typeof fetch = async (input, init) => {
+  const w = window as unknown as {
+    Clerk?: { session?: { getToken: () => Promise<string | null> } };
+  };
+  const token = await w.Clerk?.session?.getToken().catch(() => null);
+  const headers = new Headers(init?.headers);
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+  return fetch(input, { ...init, headers });
+};
+
+export const rpc = hc<AppType>("", { fetch: authFetch });
 
 /** Runtime guard: does this body look like an error envelope? */
 function isErrorBody(body: unknown): body is { error: string } {

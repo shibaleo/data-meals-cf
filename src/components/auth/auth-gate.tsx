@@ -26,14 +26,17 @@ export function useMe(): UserContextValue {
 type AuthState = "loading" | "authenticated" | "unauthenticated";
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
-  const { isLoaded, isSignedIn, signOut } = useAuth();
+  const { isLoaded, isSignedIn, signOut, getToken } = useAuth();
   const [state, setState] = useState<AuthState>("loading");
   const [me, setMe] = useState<MeUser | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const fetchMe = useCallback(async (): Promise<boolean> => {
     try {
-      const res = await fetch("/api/v1/me");
+      const token = isSignedIn ? await getToken() : null;
+      const res = await fetch("/api/v1/me", {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       if (res.ok) {
         const json = await res.json() as { data: MeUser };
         setMe(json.data);
@@ -41,7 +44,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       }
     } catch { /* ignore */ }
     return false;
-  }, []);
+  }, [isSignedIn, getToken]);
 
   const verifySession = useCallback(async () => {
     setState("loading");
