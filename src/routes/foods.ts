@@ -6,25 +6,37 @@ import { food, nutrient } from "@/lib/db/schema";
 import { foodCreateSchema, foodUpdateSchema } from "@/lib/schemas/food";
 import { uuidParam } from "@/lib/schemas/common";
 
+const rowSelect = {
+  id: food.id,
+  name: food.name,
+  brand: food.brand,
+  defaultServingG: food.defaultServingG,
+  servingBasis: food.servingBasis,
+  notes: food.notes,
+  kcalPer100g: nutrient.kcalPer100g,
+  proteinGPer100g: nutrient.proteinGPer100g,
+  fatGPer100g: nutrient.fatGPer100g,
+  carbGPer100g: nutrient.carbGPer100g,
+  vitaminJson: nutrient.vitaminJson,
+  mineralJson: nutrient.mineralJson,
+  createdAt: food.createdAt,
+  updatedAt: food.updatedAt,
+};
+
+async function fetchRow(id: string) {
+  const rows = await db
+    .select(rowSelect)
+    .from(food)
+    .leftJoin(nutrient, eq(nutrient.foodId, food.id))
+    .where(eq(food.id, id))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
 const app = new Hono()
   .get("/", async (c) => {
     const rows = await db
-      .select({
-        id: food.id,
-        name: food.name,
-        brand: food.brand,
-        defaultServingG: food.defaultServingG,
-        servingBasis: food.servingBasis,
-        notes: food.notes,
-        kcalPer100g: nutrient.kcalPer100g,
-        proteinGPer100g: nutrient.proteinGPer100g,
-        fatGPer100g: nutrient.fatGPer100g,
-        carbGPer100g: nutrient.carbGPer100g,
-        vitaminJson: nutrient.vitaminJson,
-        mineralJson: nutrient.mineralJson,
-        createdAt: food.createdAt,
-        updatedAt: food.updatedAt,
-      })
+      .select(rowSelect)
       .from(food)
       .leftJoin(nutrient, eq(nutrient.foodId, food.id))
       .orderBy(asc(food.name));
@@ -49,7 +61,8 @@ const app = new Hono()
       ...(body.vitamin_json !== undefined ? { vitaminJson: body.vitamin_json } : {}),
       ...(body.mineral_json !== undefined ? { mineralJson: body.mineral_json } : {}),
     });
-    return c.json({ data: created });
+    const row = await fetchRow(created.id);
+    return c.json({ data: row });
   })
   .put("/:id", zValidator("param", uuidParam), zValidator("json", foodUpdateSchema), async (c) => {
     const { id } = c.req.valid("param");
@@ -73,7 +86,8 @@ const app = new Hono()
     if (Object.keys(nutPatch).length > 1) {
       await db.update(nutrient).set(nutPatch).where(eq(nutrient.foodId, id));
     }
-    return c.json({ data: { id } });
+    const row = await fetchRow(id);
+    return c.json({ data: row });
   })
   .delete("/:id", zValidator("param", uuidParam), async (c) => {
     const { id } = c.req.valid("param");
