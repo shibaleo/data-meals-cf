@@ -15,6 +15,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { MarkdownEditor } from "@/components/markdown-editor";
+import { Combobox } from "@/components/ui/combobox";
 
 const MEAL_KINDS = ["breakfast", "lunch", "dinner", "snack"] as const;
 type MealKind = (typeof MEAL_KINDS)[number];
@@ -136,16 +137,15 @@ function IntakeDialog({
             <Label>Meals (coef = portion eaten)</Label>
             {items.map((it, i) => (
               <div key={i} className="flex gap-2 items-center">
-                <select
-                  className="flex-1 rounded-md border bg-background px-2 py-1.5 text-sm"
+                <Combobox
+                  className="flex-1"
+                  placeholder="Pick meal…"
+                  options={meals.map((m) => ({ value: m.id, label: m.name }))}
                   value={it.meal_id}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setItems((prev) => prev.map((p, j) => j === i ? { ...p, meal_id: v } : p));
-                  }}
-                >
-                  {meals.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                </select>
+                  onChange={(v) =>
+                    setItems((prev) => prev.map((p, j) => j === i ? { ...p, meal_id: v } : p))
+                  }
+                />
                 <Input
                   type="number" step="0.01" className="w-20"
                   value={it.coef}

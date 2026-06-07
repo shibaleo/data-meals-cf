@@ -15,6 +15,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { MarkdownEditor } from "@/components/markdown-editor";
+import { Combobox } from "@/components/ui/combobox";
 
 interface ItemDraft { food_id: string; coef: string }
 
@@ -122,16 +123,19 @@ function MealDialog({
               const f = foods.find((x) => x.id === it.food_id);
               return (
                 <div key={i} className="flex gap-2 items-center">
-                  <select
-                    className="flex-1 rounded-md border bg-background px-2 py-1.5 text-sm"
+                  <Combobox
+                    className="flex-1"
+                    placeholder="Pick food…"
+                    options={foods.map((f) => ({
+                      value: f.id,
+                      label: f.name,
+                      hint: f.brand ?? undefined,
+                    }))}
                     value={it.food_id}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setItems((prev) => prev.map((p, j) => j === i ? { ...p, food_id: v } : p));
-                    }}
-                  >
-                    {foods.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-                  </select>
+                    onChange={(v) =>
+                      setItems((prev) => prev.map((p, j) => j === i ? { ...p, food_id: v } : p))
+                    }
+                  />
                   <Input
                     type="number" step="0.01" className="w-20"
                     value={it.coef}
@@ -180,8 +184,14 @@ export default function MealsPage() {
   const restoreMeal = useRestoreMeal();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<MealRow | null>(null);
+  const [q, setQ] = useState("");
 
   const foodById = new Map(foods.map((f) => [f.id, f]));
+  const needle = q.trim().toLowerCase();
+  const filtered = needle === "" ? meals : meals.filter((m) => {
+    const compText = m.items.map((it) => foodById.get(it.foodId)?.name ?? "").join(" ");
+    return `${m.name} ${compText}`.toLowerCase().includes(needle);
+  });
 
   function summary(m: MealRow) {
     if (m.items.length === 0) return <span className="text-muted-foreground">(empty)</span>;
@@ -198,8 +208,14 @@ export default function MealsPage() {
 
   return (
     <div className="p-4 space-y-4">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-base font-medium md:hidden">Meals</h2>
+        <Input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search name / contained food…"
+          className="max-w-xs h-9"
+        />
         <div className="flex items-center gap-2 ml-auto">
           <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
             <input type="checkbox" checked={showArchived}
@@ -218,6 +234,8 @@ export default function MealsPage() {
         <div className="text-sm text-muted-foreground">Loading...</div>
       ) : meals.length === 0 ? (
         <div className="text-sm text-muted-foreground">No meals yet.</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-sm text-muted-foreground">No matches for "{q}".</div>
       ) : (
         <div className="overflow-x-auto rounded-md border">
           <table className="w-full text-sm">
@@ -230,7 +248,7 @@ export default function MealsPage() {
               </tr>
             </thead>
             <tbody>
-              {meals.map((m) => {
+              {filtered.map((m) => {
                 const archived = !!m.archivedAt;
                 return (
                 <tr key={m.id}

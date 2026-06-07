@@ -482,6 +482,11 @@ export default function FoodsPage() {
   const restoreFood = useRestoreFood();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<FoodRow | null>(null);
+  const [q, setQ] = useState("");
+  const needle = q.trim().toLowerCase();
+  const filtered = needle === "" ? foods : foods.filter((f) =>
+    `${f.name} ${f.brand ?? ""}`.toLowerCase().includes(needle),
+  );
 
   function openCreate() {
     setEditing(null);
@@ -494,8 +499,14 @@ export default function FoodsPage() {
 
   return (
     <div className="p-4 space-y-4">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-base font-medium md:hidden">Foods</h2>
+        <Input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search name / brand…"
+          className="max-w-xs h-9"
+        />
         <div className="flex items-center gap-2 ml-auto">
           <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
             <input type="checkbox" checked={showArchived}
@@ -514,6 +525,8 @@ export default function FoodsPage() {
         <div className="text-sm text-muted-foreground">Loading...</div>
       ) : foods.length === 0 ? (
         <div className="text-sm text-muted-foreground">No foods yet. Add one above.</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-sm text-muted-foreground">No matches for "{q}".</div>
       ) : (
         <div className="overflow-x-auto rounded-md border">
           <table className="w-full text-sm">
@@ -532,7 +545,7 @@ export default function FoodsPage() {
               </tr>
             </thead>
             <tbody>
-              {foods.map((f) => {
+              {filtered.map((f) => {
                 const vCount = f.vitaminJson ? Object.keys(f.vitaminJson as Record<string, number>).length : 0;
                 const mCount = f.mineralJson ? Object.keys(f.mineralJson as Record<string, number>).length : 0;
                 const lb = Number(f.labelBasisAmount ?? 100) || 100;
