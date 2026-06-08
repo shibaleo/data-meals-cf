@@ -5,9 +5,10 @@
  */
 import * as jose from "jose";
 import { eq } from "drizzle-orm";
+import bcrypt from "bcryptjs";
 import { env } from "@/lib/env";
 import { db } from "@/lib/db";
-import { appUser } from "@/lib/db/schema";
+import { appUser, apiKey } from "@/lib/db/schema";
 
 export interface AuthResult {
   authenticated: true;
@@ -118,9 +119,59 @@ function extractToken(req: Request): string | null {
   return m ? m[1] : null;
 }
 
+/**
+ * Verify a token that looks like a dm_-prefixed API key. Hits the api_key
+ * table by prefix, then bcrypt-compares the raw part against the stored hash.
+ * Touches last_used_at in the background so we can reason about active keys.
+ */
+const apiKeyCache = new Map<string, { result: AuthResult; expiresAt: number }>();
+const API_KEY_CACHE_TTL = 5 * 60 * 1000;
+
+async function verifyApiKey(token: string): Promise<AuthResult | null> {
+  const cached = apiKeyCache.get(token);
+  if (cached && Date.now() < cached.expiresAt) {
+    void db.update(apiKey).set({ lastUsedAt: new Date() })
+      .where(eq(apiKey.keyPrefix, token.slice(0, 11)))
+      .catch(() => {});
+    return cached.result;
+  }
+
+  const prefix = token.slice(0, 11); // "dm_" + 8 chars
+  const rows = await db.select().from(apiKey).where(eq(apiKey.keyPrefix, prefix)).limit(1);
+  if (rows.length === 0) return null;
+  const row = rows[0];
+  if (!row.isActive) return null;
+
+  const raw = token.slice(3); // strip "dm_"
+  const ok = await bcrypt.compare(raw, row.keyHash);
+  if (!ok) return null;
+
+  // Resolve to the issuing user.
+  const userRows = await db.select().from(appUser).where(eq(appUser.id, row.userId)).limit(1);
+  if (userRows.length === 0) return null;
+  const u = userRows[0];
+
+  const result: AuthResult = {
+    authenticated: true,
+    userId: u.id,
+    externalId: u.externalId ?? "",
+    name: `apikey:${row.name}`,
+    email: u.email,
+  };
+  apiKeyCache.set(token, { result, expiresAt: Date.now() + API_KEY_CACHE_TTL });
+  void db.update(apiKey).set({ lastUsedAt: new Date() })
+    .where(eq(apiKey.keyPrefix, prefix))
+    .catch(() => {});
+  return result;
+}
+
 export async function authenticate(req: Request): Promise<AuthResult | null> {
   const token = extractToken(req);
   if (!token) return null;
+
+  if (token.startsWith("dm_")) {
+    return verifyApiKey(token);
+  }
   const jwks = getClerkJWKS();
   if (!jwks) return null;
   try {

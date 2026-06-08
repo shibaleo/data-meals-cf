@@ -37,6 +37,22 @@ export const appUser = pgTable("app_user", {
   index("app_user_external_id_idx").on(t.externalId),
 ]);
 
+import { boolean } from "drizzle-orm/pg-core";
+
+export const apiKey = pgTable("api_key", {
+  id: id(),
+  userId: uuid("user_id").notNull().references(() => appUser.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  keyHash: text("key_hash").notNull(),
+  keyPrefix: text("key_prefix").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  ...timestamps(),
+}, (t) => [
+  index("api_key_user_id_idx").on(t.userId),
+  index("api_key_prefix_idx").on(t.keyPrefix),
+]);
+
 export const food = pgTable("food", {
   id: id(),
   name: text("name").notNull(),
