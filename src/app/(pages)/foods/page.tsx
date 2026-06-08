@@ -343,13 +343,15 @@ function FoodDialog({
     return { computed, diff, pct };
   }, [form]);
 
-  // Suggestions = union(seeded, every key ever used across foods).
+  // Suggestions come from the cached nutrient-keys endpoint (server-side
+  // DISTINCT) so we don't iterate every fetched food row.
+  const { data: nutrientKeys } = useNutrientKeys();
   const vitaminSuggestions = Array.from(new Set([
-    ...collectKeys(allFoods, "vitaminJson"),
+    ...(nutrientKeys?.vitamins ?? []),
     ...VITAMIN_SEEDS,
   ])).sort();
   const mineralSuggestions = Array.from(new Set([
-    ...collectKeys(allFoods, "mineralJson"),
+    ...(nutrientKeys?.minerals ?? []),
     ...MINERAL_SEEDS,
   ])).sort();
 
@@ -526,27 +528,11 @@ export default function FoodsPage() {
               <tr className="text-left">
                 <th className="px-3 py-2">Name</th>
                 <th className="px-3 py-2">Brand</th>
-                <th className="px-3 py-2 text-right">kcal</th>
-                <th className="px-3 py-2 text-right">P</th>
-                <th className="px-3 py-2 text-right">F</th>
-                <th className="px-3 py-2 text-right">C</th>
-                <th className="px-3 py-2 text-right">V</th>
-                <th className="px-3 py-2 text-right">M</th>
-                <th className="px-3 py-2 text-right">per</th>
                 <th className="px-3 py-2 w-10"></th>
               </tr>
             </thead>
             <tbody>
               {foods.map((f) => {
-                const vCount = f.vitaminJson ? Object.keys(f.vitaminJson as Record<string, number>).length : 0;
-                const mCount = f.mineralJson ? Object.keys(f.mineralJson as Record<string, number>).length : 0;
-                const lb = Number(f.labelBasisAmount ?? 100) || 100;
-                const sb = f.servingBasis ?? "g";
-                const scale = (s: string | null | undefined) => {
-                  if (s === null || s === undefined || s === "") return "-";
-                  const n = Number(s);
-                  return Number.isFinite(n) ? fmt(n * lb / 100) : "-";
-                };
                 const archived = !!f.archivedAt;
                 return (
                   <tr
@@ -572,13 +558,6 @@ export default function FoodsPage() {
                       </div>
                     </td>
                     <td className="px-3 py-2 text-muted-foreground">{f.brand ?? ""}</td>
-                    <td className="px-3 py-2 text-right">{scale(f.kcalPer100g)}</td>
-                    <td className="px-3 py-2 text-right">{scale(f.proteinGPer100g)}</td>
-                    <td className="px-3 py-2 text-right">{scale(f.fatGPer100g)}</td>
-                    <td className="px-3 py-2 text-right">{scale(f.carbGPer100g)}</td>
-                    <td className="px-3 py-2 text-right text-muted-foreground">{vCount || "-"}</td>
-                    <td className="px-3 py-2 text-right text-muted-foreground">{mCount || "-"}</td>
-                    <td className="px-3 py-2 text-right text-muted-foreground">{fmt(lb)}{sb}</td>
                     <td className="px-3 py-2 text-right">
                       {archived ? (
                         <button
