@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { usePageTitle } from "@/lib/page-context";
 import {
-  useFoods, useCreateFood, useUpdateFood, useDeleteFood, useRestoreFood, type FoodRow,
+  useFoods, useCreateFood, useUpdateFood, useDeleteFood, useRestoreFood, useNutrientKeys, type FoodRow,
 } from "@/hooks/queries/use-foods";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -127,7 +127,7 @@ function MicroEditor({
   );
 }
 
-// Seeded suggestions so the very first food has something to autocomplete.
+// Seeded suggestions used when the DB-derived list is empty (first food).
 const VITAMIN_SEEDS = [
   "vitamin_a_ug", "vitamin_b1_mg", "vitamin_b2_mg", "vitamin_b6_mg", "vitamin_b12_ug",
   "vitamin_c_mg", "vitamin_d_ug", "vitamin_e_mg", "vitamin_k_ug",
@@ -139,27 +139,14 @@ const MINERAL_SEEDS = [
   "zinc_mg", "copper_mg", "manganese_mg", "selenium_ug", "iodine_ug",
 ];
 
-function collectKeys(foods: FoodRow[], field: "vitaminJson" | "mineralJson"): string[] {
-  const set = new Set<string>();
-  for (const f of foods) {
-    const j = f[field] as unknown;
-    if (j && typeof j === "object") {
-      for (const k of Object.keys(j as Record<string, unknown>)) set.add(k);
-    }
-  }
-  return Array.from(set);
-}
-
 function FoodDialog({
   food,
   open,
   onOpenChange,
-  allFoods,
 }: {
   food: FoodRow | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  allFoods: FoodRow[];
 }) {
   const isEdit = food !== null;
   const createFood = useCreateFood();
@@ -293,8 +280,8 @@ function FoodDialog({
     // Warn (don't block) on vitamin/mineral keys not in the autocomplete set —
     // protects against typo-style drift like salt_g vs salt_equivalent_g.
     const unknownKeys: string[] = [];
-    const knownVitamins = new Set([...VITAMIN_SEEDS, ...collectKeys(allFoods, "vitaminJson")]);
-    const knownMinerals = new Set([...MINERAL_SEEDS, ...collectKeys(allFoods, "mineralJson")]);
+    const knownVitamins = new Set([...VITAMIN_SEEDS, ...(nutrientKeys?.vitamins ?? [])]);
+    const knownMinerals = new Set([...MINERAL_SEEDS, ...(nutrientKeys?.minerals ?? [])]);
     for (const r of vitamins) {
       const k = r.key.trim();
       if (k && !knownVitamins.has(k)) unknownKeys.push(`vitamin: ${k}`);
@@ -477,16 +464,20 @@ function FoodDialog({
 export default function FoodsPage() {
   usePageTitle("Foods");
   const [showArchived, setShowArchived] = useState(false);
-  const { data: foods = [], isLoading } = useFoods(showArchived);
+  const [qInput, setQInput] = useState("");
+  // Debounce the server query so each keystroke doesn't refire.
+  const [q, setQ] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setQ(qInput.trim()), 200);
+    return () => clearTimeout(t);
+  }, [qInput]);
+  const { data, isLoading, isFetching } = useFoods({ q, includeArchived: showArchived, limit: 200 });
+  const foods = data?.data ?? [];
+  const capped = foods.length >= (data?.limit ?? 200);
   const deleteFood = useDeleteFood();
   const restoreFood = useRestoreFood();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<FoodRow | null>(null);
-  const [q, setQ] = useState("");
-  const needle = q.trim().toLowerCase();
-  const filtered = needle === "" ? foods : foods.filter((f) =>
-    `${f.name} ${f.brand ?? ""}`.toLowerCase().includes(needle),
-  );
 
   function openCreate() {
     setEditing(null);
@@ -502,11 +493,12 @@ export default function FoodsPage() {
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-base font-medium md:hidden">Foods</h2>
         <Input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
+          value={qInput}
+          onChange={(e) => setQInput(e.target.value)}
           placeholder="Search name / brand…"
           className="max-w-xs h-9"
         />
+        {isFetching && !isLoading && <span className="text-xs text-muted-foreground">…</span>}
         <div className="flex items-center gap-2 ml-auto">
           <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
             <input type="checkbox" checked={showArchived}
@@ -519,14 +511,14 @@ export default function FoodsPage() {
         </div>
       </div>
 
-      <FoodDialog food={editing} open={dialogOpen} onOpenChange={setDialogOpen} allFoods={foods} />
+      <FoodDialog food={editing} open={dialogOpen} onOpenChange={setDialogOpen} />
 
       {isLoading ? (
         <div className="text-sm text-muted-foreground">Loading...</div>
       ) : foods.length === 0 ? (
-        <div className="text-sm text-muted-foreground">No foods yet. Add one above.</div>
-      ) : filtered.length === 0 ? (
-        <div className="text-sm text-muted-foreground">No matches for "{q}".</div>
+        <div className="text-sm text-muted-foreground">
+          {q ? `No matches for "${q}".` : "No foods yet. Add one above."}
+        </div>
       ) : (
         <div className="overflow-x-auto rounded-md border">
           <table className="w-full text-sm">
@@ -545,7 +537,7 @@ export default function FoodsPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((f) => {
+              {foods.map((f) => {
                 const vCount = f.vitaminJson ? Object.keys(f.vitaminJson as Record<string, number>).length : 0;
                 const mCount = f.mineralJson ? Object.keys(f.mineralJson as Record<string, number>).length : 0;
                 const lb = Number(f.labelBasisAmount ?? 100) || 100;
@@ -616,6 +608,11 @@ export default function FoodsPage() {
               })}
             </tbody>
           </table>
+          {capped && (
+            <p className="text-xs text-muted-foreground p-2 border-t">
+              Showing the first {foods.length} results. Refine the search to narrow down.
+            </p>
+          )}
         </div>
       )}
     </div>

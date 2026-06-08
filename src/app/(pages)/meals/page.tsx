@@ -179,7 +179,10 @@ export default function MealsPage() {
   usePageTitle("Meals");
   const [showArchived, setShowArchived] = useState(false);
   const { data: meals = [], isLoading } = useMeals(showArchived);
-  const { data: foods = [] } = useFoods();
+  // Pull a capped batch for the dropdown — typing in the combobox can
+  // refine further via direct search; we don't ship all 2500+ master rows.
+  const { data: foodsResult } = useFoods({ limit: 300 });
+  const foods = foodsResult?.data ?? [];
   const deleteMeal = useDeleteMeal();
   const restoreMeal = useRestoreMeal();
   const [dialogOpen, setDialogOpen] = useState(false);

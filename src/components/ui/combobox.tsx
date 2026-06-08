@@ -43,12 +43,16 @@ export function Combobox({
 
   const selected = options.find((o) => o.value === value);
   const needle = q.trim().toLowerCase();
-  const filtered = needle === ""
+  const matched = needle === ""
     ? options
     : options.filter((o) => {
         const hay = `${o.label} ${o.hint ?? ""}`.toLowerCase();
         return hay.includes(needle);
       });
+  // Cap rendered rows; large masters (~2500) tank Popover paint without this.
+  const cap = 80;
+  const filtered = matched.slice(0, cap);
+  const truncated = matched.length > cap;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -80,7 +84,8 @@ export function Combobox({
           {filtered.length === 0 ? (
             <p className="px-3 py-2 text-xs text-muted-foreground">{emptyText}</p>
           ) : (
-            filtered.map((o) => (
+            <>
+            {filtered.map((o) => (
               <button
                 key={o.value}
                 type="button"
@@ -91,7 +96,13 @@ export function Combobox({
                 <span className="flex-1 truncate">{o.label}</span>
                 {o.hint && <span className="text-xs text-muted-foreground shrink-0">{o.hint}</span>}
               </button>
-            ))
+            ))}
+            {truncated && (
+              <p className="px-3 py-1.5 text-[10px] text-muted-foreground border-t">
+                Showing first {cap}. Type to refine ({matched.length - cap} more).
+              </p>
+            )}
+            </>
           )}
         </div>
       </PopoverContent>

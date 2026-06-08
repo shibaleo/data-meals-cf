@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
-import { eq, asc, isNull } from "drizzle-orm";
+import { eq, asc, isNull, and, ilike, or, sql as drizzleSql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { food, nutrient } from "@/lib/db/schema";
@@ -38,20 +38,46 @@ async function fetchRow(id: string) {
 
 const listQuery = z.object({
   include_archived: z.enum(["0", "1"]).optional(),
+  q: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
 });
 
 const app = new Hono()
   .get("/", zValidator("query", listQuery), async (c) => {
-    const { include_archived } = c.req.valid("query");
+    const { include_archived, q, limit } = c.req.valid("query");
     const includeArchived = include_archived === "1";
-    const baseSelect = db
+    const lim = limit ?? 100;
+    const conds = [];
+    if (!includeArchived) conds.push(isNull(food.archivedAt));
+    if (q && q.trim().length > 0) {
+      const needle = `%${q.trim()}%`;
+      conds.push(or(ilike(food.name, needle), ilike(food.brand, needle))!);
+    }
+    const whereExpr = conds.length === 0 ? undefined : conds.length === 1 ? conds[0] : and(...conds);
+    const rows = await db
       .select(rowSelect)
       .from(food)
-      .leftJoin(nutrient, eq(nutrient.foodId, food.id));
-    const rows = includeArchived
-      ? await baseSelect.orderBy(asc(food.name))
-      : await baseSelect.where(isNull(food.archivedAt)).orderBy(asc(food.name));
-    return c.json({ data: rows });
+      .leftJoin(nutrient, eq(nutrient.foodId, food.id))
+      .where(whereExpr)
+      .orderBy(asc(food.name))
+      .limit(lim);
+    return c.json({ data: rows, limit: lim });
+  })
+  .get("/nutrient-keys", async (c) => {
+    const rows = (await db.execute(drizzleSql`
+      SELECT
+        (SELECT array_agg(DISTINCT k ORDER BY k) FROM data_meals.nutrient,
+          jsonb_object_keys(vitamin_json) AS k) AS vitamins,
+        (SELECT array_agg(DISTINCT k ORDER BY k) FROM data_meals.nutrient,
+          jsonb_object_keys(mineral_json) AS k) AS minerals
+    `)) as unknown as Array<{ vitamins: string[] | null; minerals: string[] | null }>;
+    const row = rows[0] ?? { vitamins: null, minerals: null };
+    return c.json({
+      data: {
+        vitamins: row.vitamins ?? [],
+        minerals: row.minerals ?? [],
+      },
+    });
   })
   .post("/", zValidator("json", foodCreateSchema), async (c) => {
     const body = c.req.valid("json");
