@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ExternalLink, FileText, Plus, RotateCcw, Trash2, X } from "lucide-react";
+import { AlertTriangle, ExternalLink, FileText, Plus, RotateCcw, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { usePageTitle } from "@/lib/page-context";
@@ -544,13 +544,19 @@ export default function FoodsPage() {
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-1.5">
                         <span>{f.name}</span>
-                        {f.sourceLabelUrl && (
+                        {f.sourceLabelUrl ? (
                           <a href={f.sourceLabelUrl} target="_blank" rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
                             className="text-muted-foreground hover:text-foreground"
                             title={f.sourceLabelUrl}>
                             <ExternalLink className="size-3" />
                           </a>
+                        ) : (
+                          <AlertTriangle
+                            className="size-3 text-amber-500"
+                            aria-label="No source URL"
+                            title="No source URL registered"
+                          />
                         )}
                         {f.notes && (
                           <FileText className="size-3 text-muted-foreground" aria-label="has notes" />
