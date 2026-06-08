@@ -19,6 +19,7 @@ export const foodsKeys = {
 };
 
 export type FoodRow = RpcData<typeof rpc.api.v1.foods.$get>["data"][number];
+export type FoodDetailRow = RpcData<typeof rpc.api.v1.foods[":id"]["$get"]>["data"];
 type FoodBody = Parameters<typeof rpc.api.v1.foods.$post>[0]["json"];
 
 // Wrapper carries the server limit so consumers can warn when results were
@@ -234,6 +235,19 @@ export function useRestoreFood() {
         return last?.includeArchived === false;
       }});
     },
+  });
+}
+
+// Detail fetch — only kicked off when the dialog actually opens for edit.
+// staleTime keeps a recently-fetched detail from re-firing if the user closes
+// + reopens quickly.
+export function useFoodDetail(id: string | null) {
+  return useQuery({
+    queryKey: [...foodsKeys.all, "detail", id],
+    enabled: id !== null,
+    staleTime: 30_000,
+    queryFn: () =>
+      unwrap(rpc.api.v1.foods[":id"].$get({ param: { id: id! } })).then((r) => r.data as FoodDetailRow),
   });
 }
 

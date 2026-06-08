@@ -7,7 +7,10 @@ import { food, nutrient } from "@/lib/db/schema";
 import { foodCreateSchema, foodUpdateSchema } from "@/lib/schemas/food";
 import { uuidParam } from "@/lib/schemas/common";
 
-const rowSelect = {
+// Slim row: what the table on the foods page actually shows. No nutrient
+// JOIN, no jsonb — keeps the list endpoint and the infinite-scroll
+// pagination cheap regardless of master size.
+const slimSelect = {
   id: food.id,
   name: food.name,
   brand: food.brand,
@@ -15,20 +18,24 @@ const rowSelect = {
   labelBasisAmount: food.labelBasisAmount,
   sourceLabelUrl: food.sourceLabelUrl,
   notes: food.notes,
+  archivedAt: food.archivedAt,
+  createdAt: food.createdAt,
+  updatedAt: food.updatedAt,
+};
+
+const detailSelect = {
+  ...slimSelect,
   kcalPer100g: nutrient.kcalPer100g,
   proteinGPer100g: nutrient.proteinGPer100g,
   fatGPer100g: nutrient.fatGPer100g,
   carbGPer100g: nutrient.carbGPer100g,
   vitaminJson: nutrient.vitaminJson,
   mineralJson: nutrient.mineralJson,
-  archivedAt: food.archivedAt,
-  createdAt: food.createdAt,
-  updatedAt: food.updatedAt,
 };
 
 async function fetchRow(id: string) {
   const rows = await db
-    .select(rowSelect)
+    .select(detailSelect)
     .from(food)
     .leftJoin(nutrient, eq(nutrient.foodId, food.id))
     .where(eq(food.id, id))
@@ -57,14 +64,19 @@ const app = new Hono()
     }
     const whereExpr = conds.length === 0 ? undefined : conds.length === 1 ? conds[0] : and(...conds);
     const rows = await db
-      .select(rowSelect)
+      .select(slimSelect)
       .from(food)
-      .leftJoin(nutrient, eq(nutrient.foodId, food.id))
       .where(whereExpr)
       .orderBy(asc(food.name))
       .limit(lim)
       .offset(off);
     return c.json({ data: rows, limit: lim, offset: off });
+  })
+  .get("/:id", zValidator("param", uuidParam), async (c) => {
+    const { id } = c.req.valid("param");
+    const row = await fetchRow(id);
+    if (!row) return c.json({ error: "Food not found" }, 404);
+    return c.json({ data: row });
   })
   .get("/nutrient-keys", async (c) => {
     const rows = (await db.execute(drizzleSql`

@@ -8,8 +8,10 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { usePageTitle } from "@/lib/page-context";
 import {
-  useInfiniteFoods, useCreateFood, useUpdateFood, useDeleteFood, useRestoreFood, useNutrientKeys, type FoodRow,
+  useInfiniteFoods, useCreateFood, useUpdateFood, useDeleteFood, useRestoreFood, useNutrientKeys, useFoodDetail,
+  type FoodRow, type FoodDetailRow,
 } from "@/hooks/queries/use-foods";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -140,15 +142,17 @@ const MINERAL_SEEDS = [
 ];
 
 function FoodDialog({
-  food,
+  editingId,
   open,
   onOpenChange,
 }: {
-  food: FoodRow | null;
+  editingId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const isEdit = food !== null;
+  const isEdit = editingId !== null;
+  // Detail only fires once the dialog is open with an editingId.
+  const { data: food, isFetching: detailFetching } = useFoodDetail(open && isEdit ? editingId : null);
   const createFood = useCreateFood();
   const updateFood = useUpdateFood();
   const [vitamins, setVitamins] = useState<MicroRow[]>([]);
@@ -172,6 +176,8 @@ function FoodDialog({
 
   useEffect(() => {
     if (!open) return;
+    // For edit, wait until the detail fetch resolves before populating.
+    if (isEdit && !food) return;
     if (food) {
       // Stored values are per 100; redisplay them per the food's saved
       // labelBasisAmount so the inputs match what the user originally typed.
@@ -224,7 +230,7 @@ function FoodDialog({
       setNotes("");
       setInitialNotes("");
     }
-  }, [open, food, form]);
+  }, [open, isEdit, food, form]);
 
   // Rescale all PFC + V/M values when the user changes labelBasis so that the
   // displayed numbers stay self-consistent (= "per <new labelBasis>" units).
@@ -312,8 +318,8 @@ function FoodDialog({
       mineral_json: scaledMicros(minerals),
     };
     try {
-      if (isEdit && food) {
-        await updateFood.mutateAsync({ id: food.id, body: payload });
+      if (isEdit && editingId) {
+        await updateFood.mutateAsync({ id: editingId, body: payload });
         toast.success("Food updated");
       } else {
         await createFood.mutateAsync(payload);
@@ -361,6 +367,11 @@ function FoodDialog({
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit food" : "New food"}</DialogTitle>
         </DialogHeader>
+        {isEdit && (!food || detailFetching) ? (
+          <div className="flex items-center justify-center py-10 text-muted-foreground gap-2">
+            <Loader2 className="size-4 animate-spin" /> Loading…
+          </div>
+        ) : null}
         <details className="rounded-md border border-border/60 bg-muted/10 px-3 py-2 text-xs text-muted-foreground">
           <summary className="cursor-pointer select-none">入力ルール</summary>
           <ul className="mt-2 space-y-1 list-disc list-inside">
@@ -480,7 +491,7 @@ export default function FoodsPage() {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-  } = useInfiniteFoods({ q, includeArchived: showArchived, pageSize: 100 });
+  } = useInfiniteFoods({ q, includeArchived: showArchived, pageSize: 200 });
   const foods = useMemo(
     () => (data?.pages ?? []).flatMap((p) => p.data),
     [data],
@@ -488,7 +499,7 @@ export default function FoodsPage() {
   const deleteFood = useDeleteFood();
   const restoreFood = useRestoreFood();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState<FoodRow | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   // IntersectionObserver on a sentinel at the bottom of the table — when it
   // scrolls into view, fetch the next page.
@@ -506,11 +517,11 @@ export default function FoodsPage() {
   }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
   function openCreate() {
-    setEditing(null);
+    setEditingId(null);
     setDialogOpen(true);
   }
   function openEdit(f: FoodRow) {
-    setEditing(f);
+    setEditingId(f.id);
     setDialogOpen(true);
   }
 
@@ -524,7 +535,7 @@ export default function FoodsPage() {
           placeholder="Search name / brand…"
           className="max-w-xs h-9"
         />
-        {isFetching && !isLoading && <span className="text-xs text-muted-foreground">…</span>}
+        {isFetching && !isLoading && <Loader2 className="size-3.5 text-muted-foreground animate-spin" />}
         <div className="flex items-center gap-2 ml-auto">
           <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
             <input type="checkbox" checked={showArchived}
@@ -537,10 +548,12 @@ export default function FoodsPage() {
         </div>
       </div>
 
-      <FoodDialog food={editing} open={dialogOpen} onOpenChange={setDialogOpen} />
+      <FoodDialog editingId={editingId} open={dialogOpen} onOpenChange={setDialogOpen} />
 
       {isLoading ? (
-        <div className="text-sm text-muted-foreground">Loading...</div>
+        <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> Loading foods…
+        </div>
       ) : foods.length === 0 ? (
         <div className="text-sm text-muted-foreground">
           {q ? `No matches for "${q}".` : "No foods yet. Add one above."}
@@ -619,7 +632,9 @@ export default function FoodsPage() {
           </table>
           <div ref={sentinelRef} className="h-1" />
           {isFetchingNextPage && (
-            <p className="text-xs text-muted-foreground p-2 border-t text-center">Loading more…</p>
+            <div className="flex items-center justify-center gap-2 p-2 border-t text-xs text-muted-foreground">
+              <Loader2 className="size-3.5 animate-spin" /> Loading more…
+            </div>
           )}
           {!hasNextPage && foods.length > 0 && (
             <p className="text-[10px] text-muted-foreground p-2 border-t text-center">End of list — {foods.length} items.</p>
