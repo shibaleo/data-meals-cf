@@ -191,16 +191,15 @@ export default function IntakesPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<IntakeRow | null>(null);
 
-  const mealById = new Map(meals.map((m) => [m.id, m]));
-
   function summary(it: IntakeRow) {
     if (it.items.length === 0) return <span className="text-muted-foreground">(empty)</span>;
     return it.items.map((m, i) => {
-      const meal = mealById.get(m.mealId);
+      // Use the joined meal_name from the API; falls back to "(unknown)".
+      const name = (m as { mealName?: string | null }).mealName ?? "(unknown)";
       return (
         <span key={m.id}>
           {i > 0 && <span className="text-muted-foreground"> + </span>}
-          {meal?.name ?? "(unknown)"} × {m.coef}
+          {name} × {m.coef}
         </span>
       );
     });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FileText, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { usePageTitle } from "@/lib/page-context";
@@ -28,12 +28,10 @@ function MealDialog({
   meal,
   open,
   onOpenChange,
-  foods,
 }: {
   meal: MealRow | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  foods: FoodRow[];
 }) {
   const isEdit = meal !== null;
   const createMeal = useCreateMeal();
@@ -44,6 +42,20 @@ function MealDialog({
   const [initial, setInitial] = useState<{ name: string; notes: string; items: string }>(
     { name: "", notes: "", items: "[]" },
   );
+  // Server-side food search driven by the open Combobox. One shared input
+  // across all the food rows (only one popover is open at a time).
+  const [foodQuery, setFoodQuery] = useState("");
+  const [debouncedFoodQuery, setDebouncedFoodQuery] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedFoodQuery(foodQuery.trim()), 200);
+    return () => clearTimeout(t);
+  }, [foodQuery]);
+  const { data: foodsResult } = useFoods({ q: debouncedFoodQuery, limit: 100 });
+  const foods = foodsResult?.data ?? [];
+
+  // Snapshot of food display info for any food already attached to the meal
+  // — these may not be in the current search result. Keyed by food_id.
+  const [pickedFoods, setPickedFoods] = useState<Map<string, FoodRow>>(new Map());
 
   useEffect(() => {
     if (!open) return;
@@ -57,13 +69,50 @@ function MealDialog({
       setNotes(n);
       setItems(its);
       setInitial({ name: meal.name, notes: n, items: JSON.stringify(its) });
+      // Seed pickedFoods from the embedded item names so combobox triggers
+      // can render the right label without another fetch.
+      const seed = new Map<string, FoodRow>();
+      for (const it of meal.items) {
+        const embed = it as { foodName?: string | null; foodBrand?: string | null; foodArchivedAt?: string | null };
+        seed.set(it.foodId, {
+          id: it.foodId,
+          name: embed.foodName ?? "(unknown)",
+          brand: embed.foodBrand ?? null,
+          archivedAt: embed.foodArchivedAt ?? null,
+        } as unknown as FoodRow);
+      }
+      setPickedFoods(seed);
     } else {
       setName("");
       setNotes("");
       setItems([]);
       setInitial({ name: "", notes: "", items: "[]" });
+      setPickedFoods(new Map());
     }
+    setFoodQuery("");
   }, [open, meal]);
+
+  // Merge currently-known picked foods with the latest search result so the
+  // combobox can keep rendering the chosen value's label even after the
+  // search filters it out.
+  const foodOptions = useMemo(() => {
+    const map = new Map<string, FoodRow>();
+    for (const f of foods) map.set(f.id, f);
+    for (const [id, f] of pickedFoods) if (!map.has(id)) map.set(id, f);
+    return Array.from(map.values());
+  }, [foods, pickedFoods]);
+  const foodById = useMemo(() => new Map(foodOptions.map((f) => [f.id, f])), [foodOptions]);
+
+  function rememberFood(id: string) {
+    const f = foodById.get(id);
+    if (!f) return;
+    setPickedFoods((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Map(prev);
+      next.set(id, f);
+      return next;
+    });
+  }
 
   const dirty =
     name !== initial.name ||
@@ -71,8 +120,8 @@ function MealDialog({
     JSON.stringify(items) !== initial.items;
 
   function addItem() {
-    if (foods.length === 0) return;
-    setItems((prev) => [...prev, { food_id: foods[0].id, coef: "1" }]);
+    // Empty food_id; user picks via the combobox.
+    setItems((prev) => [...prev, { food_id: "", coef: "1" }]);
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -120,21 +169,23 @@ function MealDialog({
           <div className="space-y-2">
             <Label>Foods (coef × food unit = consumed amount)</Label>
             {items.map((it, i) => {
-              const f = foods.find((x) => x.id === it.food_id);
+              const f = foodById.get(it.food_id);
               return (
                 <div key={i} className="flex gap-2 items-center">
                   <Combobox
                     className="flex-1"
                     placeholder="Pick food…"
-                    options={foods.map((f) => ({
+                    options={foodOptions.map((f) => ({
                       value: f.id,
                       label: f.name,
                       hint: f.brand ?? undefined,
                     }))}
                     value={it.food_id}
-                    onChange={(v) =>
-                      setItems((prev) => prev.map((p, j) => j === i ? { ...p, food_id: v } : p))
-                    }
+                    onSearchChange={setFoodQuery}
+                    onChange={(v) => {
+                      rememberFood(v);
+                      setItems((prev) => prev.map((p, j) => j === i ? { ...p, food_id: v } : p));
+                    }}
                   />
                   <Input
                     type="number" step="0.01" className="w-20"
@@ -179,31 +230,28 @@ export default function MealsPage() {
   usePageTitle("Meals");
   const [showArchived, setShowArchived] = useState(false);
   const { data: meals = [], isLoading } = useMeals(showArchived);
-  // Pull a capped batch for the dropdown — typing in the combobox can
-  // refine further via direct search; we don't ship all 2500+ master rows.
-  const { data: foodsResult } = useFoods({ limit: 300 });
-  const foods = foodsResult?.data ?? [];
   const deleteMeal = useDeleteMeal();
   const restoreMeal = useRestoreMeal();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<MealRow | null>(null);
   const [q, setQ] = useState("");
 
-  const foodById = new Map(foods.map((f) => [f.id, f]));
   const needle = q.trim().toLowerCase();
   const filtered = needle === "" ? meals : meals.filter((m) => {
-    const compText = m.items.map((it) => foodById.get(it.foodId)?.name ?? "").join(" ");
+    const compText = m.items.map((it) => (it as { foodName?: string | null }).foodName ?? "").join(" ");
     return `${m.name} ${compText}`.toLowerCase().includes(needle);
   });
 
   function summary(m: MealRow) {
     if (m.items.length === 0) return <span className="text-muted-foreground">(empty)</span>;
     return m.items.map((it, i) => {
-      const f = foodById.get(it.foodId);
+      // Items now carry the joined food name from the API. We fall back to the
+      // local foods list (in case the embed is missing) and finally to "(unknown)".
+      const name = (it as { foodName?: string | null }).foodName ?? "(unknown)";
       return (
         <span key={it.id}>
           {i > 0 && <span className="text-muted-foreground"> + </span>}
-          {f?.name ?? "(unknown)"} × {it.coef}
+          {name} × {it.coef}
         </span>
       );
     });
@@ -231,7 +279,7 @@ export default function MealsPage() {
         </div>
       </div>
 
-      <MealDialog meal={editing} open={dialogOpen} onOpenChange={setDialogOpen} foods={foods} />
+      <MealDialog meal={editing} open={dialogOpen} onOpenChange={setDialogOpen} />
 
       {isLoading ? (
         <div className="text-sm text-muted-foreground">Loading...</div>

@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { eq, desc, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { intake, intakeMeal } from "@/lib/db/schema";
+import { intake, intakeMeal, meal as mealTable } from "@/lib/db/schema";
 import { intakeCreateSchema, intakeUpdateSchema } from "@/lib/schemas/intake";
 import { uuidParam } from "@/lib/schemas/common";
 
@@ -10,7 +10,19 @@ const app = new Hono()
   .get("/", async (c) => {
     const rows = await db.select().from(intake).orderBy(desc(intake.eatenAt)).limit(200);
     if (rows.length === 0) return c.json({ data: [] });
-    const items = await db.select().from(intakeMeal)
+    const items = await db
+      .select({
+        id: intakeMeal.id,
+        intakeId: intakeMeal.intakeId,
+        mealId: intakeMeal.mealId,
+        coef: intakeMeal.coef,
+        sortOrder: intakeMeal.sortOrder,
+        createdAt: intakeMeal.createdAt,
+        mealName: mealTable.name,
+        mealArchivedAt: mealTable.archivedAt,
+      })
+      .from(intakeMeal)
+      .leftJoin(mealTable, eq(mealTable.id, intakeMeal.mealId))
       .where(inArray(intakeMeal.intakeId, rows.map((r) => r.id)));
     const byIntake = new Map<string, typeof items>();
     for (const it of items) {

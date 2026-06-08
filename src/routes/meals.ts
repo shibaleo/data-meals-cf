@@ -3,7 +3,7 @@ import { zValidator } from "@hono/zod-validator";
 import { eq, asc, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { meal, mealFood } from "@/lib/db/schema";
+import { meal, mealFood, food } from "@/lib/db/schema";
 import { mealCreateSchema, mealUpdateSchema } from "@/lib/schemas/meal";
 import { uuidParam } from "@/lib/schemas/common";
 
@@ -20,7 +20,23 @@ const app = new Hono()
       ? await baseSelect.orderBy(asc(meal.name))
       : await baseSelect.where(isNull(meal.archivedAt)).orderBy(asc(meal.name));
     if (meals.length === 0) return c.json({ data: [] });
-    const items = await db.select().from(mealFood)
+    // LEFT JOIN food so the row carries the food name even when the food has
+    // been archived (active food query filters them out — historic references
+    // would otherwise render as "(unknown)").
+    const items = await db
+      .select({
+        id: mealFood.id,
+        mealId: mealFood.mealId,
+        foodId: mealFood.foodId,
+        coef: mealFood.coef,
+        sortOrder: mealFood.sortOrder,
+        createdAt: mealFood.createdAt,
+        foodName: food.name,
+        foodBrand: food.brand,
+        foodArchivedAt: food.archivedAt,
+      })
+      .from(mealFood)
+      .leftJoin(food, eq(food.id, mealFood.foodId))
       .where(inArray(mealFood.mealId, meals.map((m) => m.id)))
       .orderBy(asc(mealFood.sortOrder));
     const byMeal = new Map<string, typeof items>();

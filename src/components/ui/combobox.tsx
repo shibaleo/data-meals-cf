@@ -19,6 +19,13 @@ interface Props {
   placeholder?: string;
   emptyText?: string;
   className?: string;
+  /**
+   * If provided, the popover input drives an upstream search instead of
+   * filtering `options` locally. Parent is expected to debounce, refetch,
+   * and pass updated `options` back. The footer "type to refine" hint is
+   * suppressed in this mode since the parent decides what to ship.
+   */
+  onSearchChange?: (q: string) => void;
 }
 
 export function Combobox({
@@ -28,31 +35,36 @@ export function Combobox({
   placeholder = "Select…",
   emptyText = "No matches",
   className,
+  onSearchChange,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const serverDriven = !!onSearchChange;
 
   useEffect(() => {
     if (open) {
       setQ("");
+      onSearchChange?.("");
       // Focus after the popover paints.
       requestAnimationFrame(() => inputRef.current?.focus());
     }
-  }, [open]);
+  }, [open, onSearchChange]);
 
   const selected = options.find((o) => o.value === value);
   const needle = q.trim().toLowerCase();
-  const matched = needle === ""
+  const matched = serverDriven
     ? options
-    : options.filter((o) => {
-        const hay = `${o.label} ${o.hint ?? ""}`.toLowerCase();
-        return hay.includes(needle);
-      });
+    : (needle === ""
+        ? options
+        : options.filter((o) => {
+            const hay = `${o.label} ${o.hint ?? ""}`.toLowerCase();
+            return hay.includes(needle);
+          }));
   // Cap rendered rows; large masters (~2500) tank Popover paint without this.
   const cap = 80;
   const filtered = matched.slice(0, cap);
-  const truncated = matched.length > cap;
+  const truncated = !serverDriven && matched.length > cap;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -75,7 +87,11 @@ export function Combobox({
           <Input
             ref={inputRef}
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={(e) => {
+              const v = e.target.value;
+              setQ(v);
+              onSearchChange?.(v);
+            }}
             placeholder="Search…"
             className="h-8 border-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-1"
           />
