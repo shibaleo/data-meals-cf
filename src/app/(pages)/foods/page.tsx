@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { usePageTitle } from "@/lib/page-context";
 import {
-  useFoods, useCreateFood, useUpdateFood, useDeleteFood, useRestoreFood, useNutrientKeys, type FoodRow,
+  useInfiniteFoods, useCreateFood, useUpdateFood, useDeleteFood, useRestoreFood, useNutrientKeys, type FoodRow,
 } from "@/hooks/queries/use-foods";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -473,13 +473,37 @@ export default function FoodsPage() {
     const t = setTimeout(() => setQ(qInput.trim()), 200);
     return () => clearTimeout(t);
   }, [qInput]);
-  const { data, isLoading, isFetching } = useFoods({ q, includeArchived: showArchived, limit: 200 });
-  const foods = data?.data ?? [];
-  const capped = foods.length >= (data?.limit ?? 200);
+  const {
+    data,
+    isLoading,
+    isFetching,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteFoods({ q, includeArchived: showArchived, pageSize: 100 });
+  const foods = useMemo(
+    () => (data?.pages ?? []).flatMap((p) => p.data),
+    [data],
+  );
   const deleteFood = useDeleteFood();
   const restoreFood = useRestoreFood();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<FoodRow | null>(null);
+
+  // IntersectionObserver on a sentinel at the bottom of the table — when it
+  // scrolls into view, fetch the next page.
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+        fetchNextPage();
+      }
+    }, { rootMargin: "200px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
   function openCreate() {
     setEditing(null);
@@ -593,10 +617,12 @@ export default function FoodsPage() {
               })}
             </tbody>
           </table>
-          {capped && (
-            <p className="text-xs text-muted-foreground p-2 border-t">
-              Showing the first {foods.length} results. Refine the search to narrow down.
-            </p>
+          <div ref={sentinelRef} className="h-1" />
+          {isFetchingNextPage && (
+            <p className="text-xs text-muted-foreground p-2 border-t text-center">Loading more…</p>
+          )}
+          {!hasNextPage && foods.length > 0 && (
+            <p className="text-[10px] text-muted-foreground p-2 border-t text-center">End of list — {foods.length} items.</p>
           )}
         </div>
       )}

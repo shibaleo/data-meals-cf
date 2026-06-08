@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery, type QueryClient, type InfiniteData } from "@tanstack/react-query";
 import { rpc, unwrap, type RpcData } from "@/lib/rpc-client";
 
 export const foodsKeys = {
@@ -8,6 +8,12 @@ export const foodsKeys = {
       q: params.q ?? "",
       includeArchived: !!params.includeArchived,
       limit: params.limit ?? null,
+    }] as const,
+  infinite: (params: { q?: string; includeArchived?: boolean; pageSize?: number }) =>
+    [...foodsKeys.all, "infinite", {
+      q: params.q ?? "",
+      includeArchived: !!params.includeArchived,
+      pageSize: params.pageSize ?? 100,
     }] as const,
   nutrientKeys: () => [...foodsKeys.all, "nutrient-keys"] as const,
 };
@@ -43,37 +49,70 @@ function forEachListCache(qc: QueryClient, fn: (prev: ListResult | undefined) =>
   for (const [key] of queries) qc.setQueryData<ListResult>(key, (prev) => fn(prev));
 }
 
+// Same idea for the useInfiniteFoods page bundles.
+function forEachInfiniteCache(
+  qc: QueryClient,
+  fn: (page: ListResult, pageIdx: number) => ListResult,
+) {
+  const queries = qc.getQueriesData<InfiniteData<ListResult, number>>({ queryKey: [...foodsKeys.all, "infinite"] });
+  for (const [key, prev] of queries) {
+    if (!prev) continue;
+    qc.setQueryData<InfiniteData<ListResult, number>>(key, {
+      ...prev,
+      pages: prev.pages.map((p, i) => fn(p, i)),
+    });
+  }
+}
+
+function makeStubRow(id: string, patch: Partial<FoodRow>): FoodRow {
+  const now = new Date().toISOString();
+  return {
+    id,
+    name: "",
+    brand: null,
+    servingBasis: "g",
+    labelBasisAmount: "100",
+    sourceLabelUrl: null,
+    notes: null,
+    kcalPer100g: "0",
+    proteinGPer100g: "0",
+    fatGPer100g: "0",
+    carbGPer100g: "0",
+    vitaminJson: {},
+    mineralJson: {},
+    archivedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    ...patch,
+  } as unknown as FoodRow;
+}
+
 function upsertRow(qc: QueryClient, id: string, patch: Partial<FoodRow>) {
   forEachListCache(qc, (prev) => {
     if (!prev) return prev;
     const idx = prev.data.findIndex((r) => r.id === id);
     if (idx === -1) {
-      const now = new Date().toISOString();
-      const row = {
-        id,
-        name: "",
-        brand: null,
-        servingBasis: "g",
-        labelBasisAmount: "100",
-        sourceLabelUrl: null,
-        notes: null,
-        kcalPer100g: "0",
-        proteinGPer100g: "0",
-        fatGPer100g: "0",
-        carbGPer100g: "0",
-        vitaminJson: {},
-        mineralJson: {},
-        archivedAt: null,
-        createdAt: now,
-        updatedAt: now,
-        ...patch,
-      } as unknown as FoodRow;
-      const next = [...prev.data, row].sort((a, b) => a.name.localeCompare(b.name));
+      const next = [...prev.data, makeStubRow(id, patch)].sort((a, b) => a.name.localeCompare(b.name));
       return { data: next, limit: prev.limit };
     }
     const data = prev.data.slice();
     data[idx] = { ...data[idx], ...patch };
     return { data: data.sort((a, b) => a.name.localeCompare(b.name)), limit: prev.limit };
+  });
+  // For infinite caches: locate the page that holds the row and patch in
+  // place. Newly-created rows go on the first page (sorted within it).
+  forEachInfiniteCache(qc, (page, pageIdx) => {
+    const idx = page.data.findIndex((r) => r.id === id);
+    if (idx >= 0) {
+      const data = page.data.slice();
+      data[idx] = { ...data[idx], ...patch };
+      return { ...page, data: data.sort((a, b) => a.name.localeCompare(b.name)) };
+    }
+    if (pageIdx === 0 && !page.data.some((r) => r.id === id)) {
+      const data = [...page.data, makeStubRow(id, patch)].sort((a, b) => a.name.localeCompare(b.name));
+      return { ...page, data };
+    }
+    return page;
   });
 }
 
@@ -133,30 +172,49 @@ export function useUpdateFood() {
   });
 }
 
+function archiveRowAcross(qc: QueryClient, id: string, archivedAt: string | null) {
+  // Flat caches.
+  const flat = qc.getQueriesData<ListResult>({ queryKey: [...foodsKeys.all, "list"] });
+  for (const [key, prev] of flat) {
+    if (!prev) continue;
+    const params = key[key.length - 1] as { includeArchived: boolean };
+    if (params.includeArchived) {
+      qc.setQueryData<ListResult>(key, {
+        ...prev,
+        data: prev.data.map((r) => r.id === id ? { ...r, archivedAt } : r),
+      });
+    } else if (archivedAt !== null) {
+      qc.setQueryData<ListResult>(key, {
+        ...prev,
+        data: prev.data.filter((r) => r.id !== id),
+      });
+    }
+  }
+  // Infinite caches.
+  const inf = qc.getQueriesData<InfiniteData<ListResult, number>>({ queryKey: [...foodsKeys.all, "infinite"] });
+  for (const [key, prev] of inf) {
+    if (!prev) continue;
+    const params = key[key.length - 1] as { includeArchived: boolean };
+    qc.setQueryData<InfiniteData<ListResult, number>>(key, {
+      ...prev,
+      pages: prev.pages.map((page) => {
+        if (params.includeArchived) {
+          return { ...page, data: page.data.map((r) => r.id === id ? { ...r, archivedAt } : r) };
+        }
+        if (archivedAt !== null) {
+          return { ...page, data: page.data.filter((r) => r.id !== id) };
+        }
+        return page;
+      }),
+    });
+  }
+}
+
 export function useDeleteFood() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => unwrap(rpc.api.v1.foods[":id"].$delete({ param: { id } })),
-    onSuccess: (_res, id) => {
-      const archivedAt = new Date().toISOString();
-      const queries = qc.getQueriesData<ListResult>({ queryKey: [...foodsKeys.all, "list"] });
-      for (const [key, prev] of queries) {
-        if (!prev) continue;
-        // Cache key shape: [..."list", { q, includeArchived, limit }]
-        const params = key[key.length - 1] as { includeArchived: boolean };
-        if (params.includeArchived) {
-          qc.setQueryData<ListResult>(key, {
-            ...prev,
-            data: prev.data.map((r) => r.id === id ? { ...r, archivedAt } : r),
-          });
-        } else {
-          qc.setQueryData<ListResult>(key, {
-            ...prev,
-            data: prev.data.filter((r) => r.id !== id),
-          });
-        }
-      }
-    },
+    onSuccess: (_res, id) => archiveRowAcross(qc, id, new Date().toISOString()),
   });
 }
 
@@ -165,22 +223,41 @@ export function useRestoreFood() {
   return useMutation({
     mutationFn: (id: string) => unwrap(rpc.api.v1.foods[":id"].restore.$post({ param: { id } })),
     onSuccess: (_res, id) => {
-      const queries = qc.getQueriesData<ListResult>({ queryKey: [...foodsKeys.all, "list"] });
-      for (const [key, prev] of queries) {
-        if (!prev) continue;
-        const params = key[key.length - 1] as { includeArchived: boolean };
-        if (params.includeArchived) {
-          qc.setQueryData<ListResult>(key, {
-            ...prev,
-            data: prev.data.map((r) => r.id === id ? { ...r, archivedAt: null } : r),
-          });
-        }
-      }
-      // Active list might not have this row — refetch.
+      archiveRowAcross(qc, id, null);
+      // Active list might not have this row — refetch to surface it.
       qc.invalidateQueries({ queryKey: [...foodsKeys.all, "list"], predicate: (q) => {
         const last = q.queryKey[q.queryKey.length - 1] as { includeArchived?: boolean } | undefined;
         return last?.includeArchived === false;
       }});
+      qc.invalidateQueries({ queryKey: [...foodsKeys.all, "infinite"], predicate: (q) => {
+        const last = q.queryKey[q.queryKey.length - 1] as { includeArchived?: boolean } | undefined;
+        return last?.includeArchived === false;
+      }});
     },
+  });
+}
+
+export function useInfiniteFoods(params: { q?: string; includeArchived?: boolean; pageSize?: number } = {}) {
+  const q = params.q ?? "";
+  const includeArchived = !!params.includeArchived;
+  const pageSize = params.pageSize ?? 100;
+  return useInfiniteQuery({
+    queryKey: foodsKeys.infinite({ q, includeArchived, pageSize }),
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) =>
+      unwrap(rpc.api.v1.foods.$get({
+        query: {
+          ...(q ? { q } : {}),
+          ...(includeArchived ? { include_archived: "1" } : {}),
+          limit: String(pageSize),
+          offset: String(pageParam),
+        },
+      })).then((r) => ({ data: r.data as FoodRow[], limit: r.limit ?? pageSize })),
+    getNextPageParam: (last, all) => {
+      // If the last page came back full, there might be more.
+      if (last.data.length < last.limit) return undefined;
+      return all.reduce((sum, p) => sum + p.data.length, 0);
+    },
+    placeholderData: (prev) => prev,
   });
 }

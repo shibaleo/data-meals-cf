@@ -40,13 +40,15 @@ const listQuery = z.object({
   include_archived: z.enum(["0", "1"]).optional(),
   q: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(500).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
 });
 
 const app = new Hono()
   .get("/", zValidator("query", listQuery), async (c) => {
-    const { include_archived, q, limit } = c.req.valid("query");
+    const { include_archived, q, limit, offset } = c.req.valid("query");
     const includeArchived = include_archived === "1";
     const lim = limit ?? 100;
+    const off = offset ?? 0;
     const conds = [];
     if (!includeArchived) conds.push(isNull(food.archivedAt));
     if (q && q.trim().length > 0) {
@@ -60,8 +62,9 @@ const app = new Hono()
       .leftJoin(nutrient, eq(nutrient.foodId, food.id))
       .where(whereExpr)
       .orderBy(asc(food.name))
-      .limit(lim);
-    return c.json({ data: rows, limit: lim });
+      .limit(lim)
+      .offset(off);
+    return c.json({ data: rows, limit: lim, offset: off });
   })
   .get("/nutrient-keys", async (c) => {
     const rows = (await db.execute(drizzleSql`
