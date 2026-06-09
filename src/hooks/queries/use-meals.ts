@@ -20,34 +20,17 @@ export function useMeals(includeArchived = false) {
   });
 }
 
-function itemsFromBody(mealId: string, items: MealBody["items"], now: string) {
-  return items.map((it, i) => ({
-    id: `${mealId}-item-${i}`,
-    mealId,
-    foodId: it.food_id,
-    coef: String(it.coef),
-    sortOrder: it.sort_order,
-    createdAt: now,
-  }));
-}
-
 export function useCreateMeal() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: MealBody) => unwrap(rpc.api.v1.meals.$post({ json: body })),
-    onSuccess: (res, body) => {
-      const created = res.data as { id: string } | null;
+    onSuccess: (res) => {
+      // Server returns the fully expanded meal (items LEFT JOIN food), so
+      // the cache patch carries food names directly.
+      const created = res.data as MealRow | { id: string } | null;
       if (!created) return;
-      const now = new Date().toISOString();
-      const newRow = {
-        id: created.id,
-        name: body.name,
-        notes: body.notes ?? null,
-        archivedAt: null,
-        createdAt: now,
-        updatedAt: now,
-        items: itemsFromBody(created.id, body.items, now),
-      } as unknown as MealRow;
+      const newRow = (created as MealRow).items ? (created as MealRow) : null;
+      if (!newRow) return;
       for (const ia of [false, true]) {
         qc.setQueryData<MealRow[]>(mealsKeys.list(ia), (prev) => {
           const base = prev ?? [];
@@ -65,22 +48,12 @@ export function useUpdateMeal() {
       id: string;
       body: Parameters<typeof rpc.api.v1.meals[":id"]["$put"]>[0]["json"];
     }) => unwrap(rpc.api.v1.meals[":id"].$put({ param: { id }, json: body })),
-    onSuccess: (_res, { id, body }) => {
-      const patch = (r: MealRow): MealRow => {
-        const now = new Date().toISOString();
-        return {
-          ...r,
-          ...(body.name !== undefined ? { name: body.name } : {}),
-          ...(body.notes !== undefined ? { notes: body.notes ?? null } : {}),
-          updatedAt: now,
-          ...(body.items !== undefined ? {
-            items: itemsFromBody(id, body.items, now),
-          } : {}),
-        } as MealRow;
-      };
+    onSuccess: (res, { id }) => {
+      const updated = res.data as MealRow | null;
+      if (!updated || !(updated as MealRow).items) return;
       for (const ia of [false, true]) {
         qc.setQueryData<MealRow[]>(mealsKeys.list(ia), (prev) =>
-          prev ? prev.map((r) => r.id === id ? patch(r) : r)
+          prev ? prev.map((r) => r.id === id ? updated : r)
             .sort((a, b) => a.name.localeCompare(b.name)) : prev);
       }
     },

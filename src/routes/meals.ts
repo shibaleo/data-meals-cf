@@ -11,6 +11,28 @@ const listQuery = z.object({
   include_archived: z.enum(["0", "1"]).optional(),
 });
 
+async function fetchExpandedMeal(id: string) {
+  const rows = await db.select().from(meal).where(eq(meal.id, id)).limit(1);
+  if (rows.length === 0) return null;
+  const items = await db
+    .select({
+      id: mealFood.id,
+      mealId: mealFood.mealId,
+      foodId: mealFood.foodId,
+      coef: mealFood.coef,
+      sortOrder: mealFood.sortOrder,
+      createdAt: mealFood.createdAt,
+      foodName: food.name,
+      foodBrand: food.brand,
+      foodArchivedAt: food.archivedAt,
+    })
+    .from(mealFood)
+    .leftJoin(food, eq(food.id, mealFood.foodId))
+    .where(eq(mealFood.mealId, id))
+    .orderBy(asc(mealFood.sortOrder));
+  return { ...rows[0], items };
+}
+
 const app = new Hono()
   .get("/", zValidator("query", listQuery), async (c) => {
     const { include_archived } = c.req.valid("query");
@@ -61,7 +83,8 @@ const app = new Hono()
         sortOrder: it.sort_order,
       })));
     }
-    return c.json({ data: created });
+    const row = await fetchExpandedMeal(created.id);
+    return c.json({ data: row ?? created });
   })
   .put("/:id", zValidator("param", uuidParam), zValidator("json", mealUpdateSchema), async (c) => {
     const { id } = c.req.valid("param");
@@ -81,7 +104,8 @@ const app = new Hono()
         })));
       }
     }
-    return c.json({ data: { id } });
+    const row = await fetchExpandedMeal(id);
+    return c.json({ data: row ?? { id } });
   })
   .delete("/:id", zValidator("param", uuidParam), async (c) => {
     // Soft delete (see foods.ts for rationale).

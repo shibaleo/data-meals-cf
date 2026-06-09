@@ -18,34 +18,20 @@ export function useIntakes() {
 
 // See memory/feedback_cache_pattern.md — derive cache from body, never refetch.
 
-function itemsFromBody(intakeId: string, items: IntakeBody["items"], now: string) {
-  return items.map((it, i) => ({
-    id: `${intakeId}-item-${i}`,
-    intakeId,
-    mealId: it.meal_id,
-    coef: String(it.coef),
-    sortOrder: it.sort_order,
-    createdAt: now,
-  }));
-}
-
 export function useCreateIntake() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: IntakeBody) => unwrap(rpc.api.v1.intakes.$post({ json: body })),
-    onSuccess: (res, body) => {
-      const created = res.data as { id: string } | null;
+    onSuccess: (res) => {
+      // Server returns the full expanded row (intake + items LEFT JOIN meal),
+      // so the cache patch carries the meal names directly. Fallback path
+      // (server returned an unexpanded row) is left for safety.
+      const created = res.data as IntakeRow | { id: string } | null;
       if (!created) return;
-      const now = new Date().toISOString();
-      const newRow = {
-        id: created.id,
-        eatenAt: body.eaten_at,
-        mealKind: body.meal_kind,
-        notes: body.notes ?? null,
-        createdAt: now,
-        updatedAt: now,
-        items: itemsFromBody(created.id, body.items, now),
-      } as unknown as IntakeRow;
+      const newRow = (created as IntakeRow).items
+        ? (created as IntakeRow)
+        : null;
+      if (!newRow) return;
       qc.setQueryData<IntakeRow[]>(intakesKeys.list(), (prev) => {
         const base = prev ?? [];
         return [newRow, ...base].sort(
@@ -63,22 +49,15 @@ export function useUpdateIntake() {
       id: string;
       body: Parameters<typeof rpc.api.v1.intakes[":id"]["$put"]>[0]["json"];
     }) => unwrap(rpc.api.v1.intakes[":id"].$put({ param: { id }, json: body })),
-    onSuccess: (_res, { id, body }) => {
+    onSuccess: (res, { id }) => {
+      // Same expansion contract as create — server hands back the fully
+      // joined row so item names survive into the cache.
+      const updated = res.data as IntakeRow | null;
+      if (!updated || !(updated as IntakeRow).items) return;
       qc.setQueryData<IntakeRow[]>(intakesKeys.list(), (prev) => {
         if (!prev) return prev;
-        const now = new Date().toISOString();
-        return prev.map((r) => {
-          if (r.id !== id) return r;
-          const next: IntakeRow = {
-            ...r,
-            ...(body.eaten_at !== undefined ? { eatenAt: body.eaten_at } : {}),
-            ...(body.meal_kind !== undefined ? { mealKind: body.meal_kind } : {}),
-            ...(body.notes !== undefined ? { notes: body.notes ?? null } : {}),
-            updatedAt: now,
-            ...(body.items !== undefined ? { items: itemsFromBody(id, body.items, now) } : {}),
-          } as IntakeRow;
-          return next;
-        }).sort((a, b) => new Date(b.eatenAt).getTime() - new Date(a.eatenAt).getTime());
+        return prev.map((r) => r.id === id ? updated : r)
+          .sort((a, b) => new Date(b.eatenAt).getTime() - new Date(a.eatenAt).getTime());
       });
     },
   });

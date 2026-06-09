@@ -6,6 +6,26 @@ import { intake, intakeMeal, meal as mealTable } from "@/lib/db/schema";
 import { intakeCreateSchema, intakeUpdateSchema } from "@/lib/schemas/intake";
 import { uuidParam } from "@/lib/schemas/common";
 
+async function fetchExpandedIntake(id: string) {
+  const rows = await db.select().from(intake).where(eq(intake.id, id)).limit(1);
+  if (rows.length === 0) return null;
+  const items = await db
+    .select({
+      id: intakeMeal.id,
+      intakeId: intakeMeal.intakeId,
+      mealId: intakeMeal.mealId,
+      coef: intakeMeal.coef,
+      sortOrder: intakeMeal.sortOrder,
+      createdAt: intakeMeal.createdAt,
+      mealName: mealTable.name,
+      mealArchivedAt: mealTable.archivedAt,
+    })
+    .from(intakeMeal)
+    .leftJoin(mealTable, eq(mealTable.id, intakeMeal.mealId))
+    .where(eq(intakeMeal.intakeId, id));
+  return { ...rows[0], items };
+}
+
 const app = new Hono()
   .get("/", async (c) => {
     const rows = await db.select().from(intake).orderBy(desc(intake.eatenAt)).limit(200);
@@ -47,7 +67,8 @@ const app = new Hono()
         sortOrder: it.sort_order,
       })));
     }
-    return c.json({ data: created });
+    const row = await fetchExpandedIntake(created.id);
+    return c.json({ data: row ?? created });
   })
   .put("/:id", zValidator("param", uuidParam), zValidator("json", intakeUpdateSchema), async (c) => {
     const { id } = c.req.valid("param");
@@ -68,7 +89,8 @@ const app = new Hono()
         })));
       }
     }
-    return c.json({ data: { id } });
+    const row = await fetchExpandedIntake(id);
+    return c.json({ data: row ?? { id } });
   })
   .delete("/:id", zValidator("param", uuidParam), async (c) => {
     const { id } = c.req.valid("param");
