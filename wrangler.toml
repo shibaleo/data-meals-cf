@@ -4,10 +4,10 @@ compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat_v2"]
 
 [vars]
-VITE_BASE_URL = "https://data-meals-cf.shibaleo.workers.dev"
+VITE_BASE_URL = "https://meals.shibaleo.uk"
 # Clerk publishable key is public; needed at runtime in Worker to derive the
 # Clerk frontend API domain for JWKS verification (see src/lib/auth.ts).
-VITE_CLERK_PUBLISHABLE_KEY = "pk_test_aHVtYmxlLWdydWItODguY2xlcmsuYWNjb3VudHMuZGV2JA"
+VITE_CLERK_PUBLISHABLE_KEY = "pk_live_Y2xlcmsuc2hpYmFsZW8udWsk"
 # CLERK_SECRET_KEY must be set via `wrangler secret put CLERK_SECRET_KEY`
 # (used to look up the signed-in user's email — not strictly required for auth
 # to succeed, but otherwise email field is empty).
