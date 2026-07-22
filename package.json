@@ -14,6 +14,13 @@
     "db:studio": "dotenv -e .env.local -- bws run --project-id 6eece948-709c-4a86-8923-b48e017573b9 -- drizzle-kit studio",
     "secrets:prod": "dotenv -e .env.local -- node scripts/set-cf-secrets.mjs"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "workerd",
+      "sharp"
+    ]
+  },
   "dependencies": {
     "@clerk/react": "^6.4.2",
     "@codemirror/commands": "^6.10.3",
