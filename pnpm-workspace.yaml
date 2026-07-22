@@ -1,0 +1,6 @@
+# pnpm 11 で package.json の pnpm.onlyBuiltDependencies が読まれなくなり allowBuilds に移設
+allowBuilds:
+  esbuild: true          # Vite / ビルドの中核
+  workerd: true          # wrangler ローカルランタイム (dev/deploy)
+  sharp: true            # ネイティブ画像処理 (react-pdf)
+  '@clerk/shared': false # postinstall のみ、無くても動作に支障なし

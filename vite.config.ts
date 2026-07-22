@@ -1,4 +1,6 @@
-import "dotenv/config";
+// secret / config は起動時に注入される (dev=bws run、prod=CF Worker Secret / Hyperdrive)。
+// 非機密 config は src/lib/public-config.ts。よって .env を dotenv で読み込まない
+// (読み込むと退役予定の .env の prod ブランチ URL を誤って拾う恐れがある)。
 import { defineConfig, type Plugin, type ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";

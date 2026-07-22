@@ -7,6 +7,7 @@ import * as jose from "jose";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { env } from "@/lib/env";
+import { publicConfig } from "@/lib/public-config";
 import { db } from "@/lib/db";
 import { appUser, apiKey } from "@/lib/db/schema";
 
@@ -19,7 +20,7 @@ export interface AuthResult {
 }
 
 function getClerkDomain(): string | null {
-  const pk = env.VITE_CLERK_PUBLISHABLE_KEY;
+  const pk = publicConfig.clerkPublishableKey;
   if (!pk) return null;
   const encoded = pk.replace(/^pk_(test|live)_/, "");
   try {

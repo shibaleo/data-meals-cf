@@ -4,15 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "dotenv -e .env.local -- bws run --project-id 6eece948-709c-4a86-8923-b48e017573b9 -- vite",
     "build": "vite build && node scripts/build-worker.mjs",
-    "preview": "wrangler pages dev dist",
-    "deploy": "wrangler pages deploy dist",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio",
-    "bootstrap": "tsx scripts/bootstrap.ts"
+    "preview": "wrangler dev",
+    "deploy": "pnpm build && dotenv -e .env.local -- bws run --project-id b49ccb02-f02b-4c7e-a4c1-b48e005732fc -- wrangler deploy",
+    "db:generate": "dotenv -e .env.local -- bws run --project-id 6eece948-709c-4a86-8923-b48e017573b9 -- drizzle-kit generate",
+    "db:migrate": "dotenv -e .env.local -- bws run --project-id 6eece948-709c-4a86-8923-b48e017573b9 -- drizzle-kit migrate",
+    "db:push": "dotenv -e .env.local -- bws run --project-id 6eece948-709c-4a86-8923-b48e017573b9 -- drizzle-kit push",
+    "db:studio": "dotenv -e .env.local -- bws run --project-id 6eece948-709c-4a86-8923-b48e017573b9 -- drizzle-kit studio",
+    "secrets:prod": "dotenv -e .env.local -- node scripts/set-cf-secrets.mjs"
   },
   "dependencies": {
     "@clerk/react": "^6.4.2",
@@ -64,11 +64,6 @@
     "vite": "^8.0.9",
     "zod": "^4.3.6"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
-  },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250418.0",
     "@tailwindcss/postcss": "^4.2.2",
@@ -78,6 +73,7 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "dotenv": "^17.3.1",
+    "dotenv-cli": "^11.0.0",
     "drizzle-kit": "^0.31.1",
     "esbuild": "^0.28.0",
     "postcss": "^8.5.3",

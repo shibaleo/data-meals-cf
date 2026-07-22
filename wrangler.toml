@@ -3,14 +3,10 @@ main = "dist/_worker.js"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat_v2"]
 
-[vars]
-VITE_BASE_URL = "https://meals.shibaleo.uk"
-# Clerk publishable key is public; needed at runtime in Worker to derive the
-# Clerk frontend API domain for JWKS verification (see src/lib/auth.ts).
-VITE_CLERK_PUBLISHABLE_KEY = "pk_live_Y2xlcmsuc2hpYmFsZW8udWsk"
-# CLERK_SECRET_KEY must be set via `wrangler secret put CLERK_SECRET_KEY`
-# (used to look up the signed-in user's email — not strictly required for auth
-# to succeed, but otherwise email field is empty).
+# 非機密 config は src/lib/public-config.ts (git 追跡・ビルド焼き込み) に集約。
+# ここには秘密も非機密の [vars] も置かない。
+# CLERK_SECRET_KEY は `wrangler secret put CLERK_SECRET_KEY` で Worker Secret に。
+# (署名済みユーザーの email lookup 用。無くても認証自体は通るが email が空になる。)
 
 # Shared Hyperdrive with data-drills-cf — both point at the same Neon instance.
 # data_meals vs data_drills は postgres-js client の search_path で分離している
